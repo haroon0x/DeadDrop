@@ -278,7 +278,7 @@ def complete_job(job_id: int, body: CompleteJob):
                 completed_at=ts,
             )
         )
-        return get_job(conn, job_id, include_logs=True)
+        return {"ok": True, "id": job_id, "status": models.COMPLETED}
 
 
 @app.post("/api/worker/jobs/{job_id}/fail", dependencies=[Depends(require_worker)])
@@ -300,4 +300,4 @@ def fail_job(job_id: int, body: FailJob):
                 completed_at=ts,
             )
         )
-        return get_job(conn, job_id, include_logs=True)
+        return {"ok": True, "id": job_id, "status": models.FAILED}

@@ -17,10 +17,36 @@ func TestExtractReceiptFreeForm(t *testing.T) {
 	}
 }
 
+func TestExtractReceiptAcceptsMissingEndMarker(t *testing.T) {
+	output := "noise\nDEADDROP_RECEIPT\nlisted files\nREADME.md\n"
+	got := extractReceipt(output)
+	want := "DEADDROP_RECEIPT\nlisted files\nREADME.md"
+	if got != want {
+		t.Fatalf("receipt mismatch\nwant: %q\n got: %q", want, got)
+	}
+}
+
 func TestBuildSummaryReportsMissingReceipt(t *testing.T) {
 	_, ok := buildSummary("custom", "demo", 0, "plain output")
 	if ok {
 		t.Fatal("expected missing receipt")
+	}
+}
+
+func TestRedactedCommandForLogHidesPromptAndTask(t *testing.T) {
+	got := redactedCommandForLog(`agent --prompt "{{prompt}}" --task '{{task}}' --repo "{{repo}}"`, RepoConfig{
+		Alias: "demo",
+		Path:  "/tmp/demo",
+		Name:  "Demo",
+	})
+	if strings.Contains(got, "{{prompt}}") || strings.Contains(got, "{{task}}") {
+		t.Fatalf("template placeholders leaked: %q", got)
+	}
+	if !strings.Contains(got, "<prompt redacted>") || !strings.Contains(got, "<task redacted>") {
+		t.Fatalf("expected redacted placeholders, got %q", got)
+	}
+	if !strings.Contains(got, "/tmp/demo") {
+		t.Fatalf("expected repo path to remain visible, got %q", got)
 	}
 }
 

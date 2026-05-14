@@ -83,7 +83,12 @@ def test_create_job_and_worker_flow():
     assert complete.status_code == 200
     body = complete.json()
     assert body["status"] == "completed"
-    assert body["logs"][0]["content"] == "Picked up job"
+    assert body["id"] == job_id
+
+    fetched = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "completed"
+    assert fetched.json()["logs"][0]["content"] == "Picked up job"
 
 
 def test_new_job_page_hides_worker_choice_and_shows_repo_dropdown():

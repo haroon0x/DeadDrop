@@ -179,11 +179,18 @@ func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt,
 	command := replaceTemplate(tmpl, "prompt", prompt)
 	command = replaceTemplate(command, "task", task)
 	command = replaceTemplate(command, "repo", repo.Path)
-	c.Log(jobID, "system", "Running agent command: "+command)
+	c.Log(jobID, "system", "Running agent command: "+redactedCommandForLog(tmpl, repo))
 	if cfg.DryRun {
 		return CommandResult{ExitCode: 0, Output: "Dry run: command not executed"}, nil
 	}
 	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "sh", "-c", command)
+}
+
+func redactedCommandForLog(tmpl string, repo RepoConfig) string {
+	command := strings.ReplaceAll(tmpl, "{{prompt}}", "<prompt redacted>")
+	command = strings.ReplaceAll(command, "{{task}}", "<task redacted>")
+	command = strings.ReplaceAll(command, "{{repo}}", repo.Path)
+	return command
 }
 
 func logCommand(dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
@@ -285,8 +292,11 @@ func buildSummary(agent, alias string, exitCode int, output string) (string, boo
 func extractReceipt(output string) string {
 	start := strings.Index(output, "DEADDROP_RECEIPT\n")
 	end := strings.LastIndex(output, "DEADDROP_RECEIPT_END")
-	if start == -1 || end == -1 || end <= start {
+	if start == -1 {
 		return ""
+	}
+	if end == -1 || end <= start {
+		return strings.TrimSpace(output[start:])
 	}
 	return strings.TrimSpace(output[start : end+len("DEADDROP_RECEIPT_END")])
 }
