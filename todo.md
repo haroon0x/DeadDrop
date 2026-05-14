@@ -25,40 +25,13 @@
 - [x] Identify MVP risks: DB persistence, local command execution trust boundary, running cancellation scope
 
 ## Build
-- [x] Scaffold monorepo structure
-- [x] Build FastAPI server APIs
-- [x] Build SQLAlchemy persistence with local SQLite default
-- [x] Build mobile-friendly Jinja pages
-- [x] Build Go worker CLI
-- [x] Add mock agent mode with deterministic demo fix
-- [x] Add Gemini/custom command modes
-- [x] Add demo repo
-- [x] Add docs and README
-- [x] Add minimal server tests
-- [x] Add markdown handoff notes for fresh agents
-- [x] Add workspace manifest support
-- [x] Add worker repo registration API
-- [x] Add repo dropdown UI from registered aliases
-- [x] Strengthen Gemini prompt: no commit/push, return audit receipt
-- [x] Hide worker field from new job UI
-- [x] Replace stale original spec with concise current MVP spec
-- [x] Add worker-side agent timeout
+
 - [x] Harness Gemini prompt with receipt markers and summary extraction
 - [x] Make receipt content free-form while enforcing wrapper markers
 - [x] Add public landing page and polished dashboard styling
-- [x] Add fresh-agent handoff doc
-- [x] Enforce worker repo path is git worktree root
-- [x] Implement CSRF protection (Double Submit Cookie)
-- [x] Harden worker: refuse to run as root
-- [x] Default to Secure cookies in production
-- [x] Add constant-time token comparisons
 
 ## Verify
-- [x] Run server tests
-- [x] Run Go tests/build
-- [x] Run end-to-end mock smoke check
-- [x] Run direct Gemini CLI smoke check
-- [x] Rerun end-to-end mock smoke with manifest path
+
 - [x] Run full prompt workflow: register manifest repo, create job, worker claims, mock fixes repo, receipt returns logs/diff/no-commit summary
 - [x] Check `/jobs/new` UI shows repo dropdown and hides worker choice
 - [x] Verify receipt extraction with mock `DEADDROP_RECEIPT`
@@ -77,4 +50,5 @@
 - [ ] Add running-job cancellation protocol from server to worker
 - [x] Add detailed deployment guide with exact Render + Supabase settings
 - [ ] Add rate limiting to login and API endpoints
+- [x] Add CI/CD pipeline (GitHub Actions) with test runners and `render.yaml` validation
 - [ ] Add accept/reject action after diff review, only if MVP demo still feels incomplete

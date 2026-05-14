@@ -4,6 +4,8 @@ services:
     runtime: docker
     dockerfilePath: server/Dockerfile
     dockerContext: server
+    plan: free
+    healthCheckPath: /healthz
     envVars:
       - key: OWNER_TOKEN
         sync: false
