@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: deaddrop
+    runtime: python
+    rootDir: server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OWNER_TOKEN
+        sync: false
+      - key: WORKER_TOKEN
+        sync: false
+      - key: SECURE_COOKIES
+        value: true
+      - key: DATABASE_URL
+        sync: false

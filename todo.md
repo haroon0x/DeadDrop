@@ -4,7 +4,7 @@
 - Read this file first, then `spec.md`, then `README.md`, then `docs/fresh-agent-handoff.md`.
 - Current implementation lives at repo root: `server/`, `worker/`, and `examples/`.
 - Server uses FastAPI + SQLAlchemy + Jinja templates. Local dev defaults to SQLite; production/demo uses Supabase Postgres via `DATABASE_URL`. Run with `cd server && uv run uvicorn app.main:app --reload`.
-- Worker uses Go. Preferred run: `cd worker && go run . run --server http://localhost:8000 --token worker_dev --worker local --manifest deaddrop.manifest.example.json --agent mock`.
+- Worker uses Go. Preferred run: `cd worker && go run . run --server http://localhost:8000 --token "$WORKER_TOKEN" --worker local --manifest deaddrop.manifest.example.json --agent mock`.
 - Worker manifest registers repo aliases with server. Server stores aliases/display names only, not absolute paths. Phone UI dropdown reads registered repos.
 - MVP has one internal worker named `local`; frontend intentionally hides worker choice.
 - Gemini CLI exists on this machine: `gemini --version` returned `0.41.2`. A direct smoke command returned `GEMINI_OK`, with extension warnings and one transient 429 retry.

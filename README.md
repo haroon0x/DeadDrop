@@ -30,12 +30,12 @@ cd server
 uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
-export OWNER_TOKEN=owner_dev
-export WORKER_TOKEN=worker_dev
+export OWNER_TOKEN="$(openssl rand -base64 32)"
+export WORKER_TOKEN="$(openssl rand -base64 32)"
 uvicorn app.main:app --reload
 ```
 
-Open `http://localhost:8000/login`, enter `owner_dev`, and drop a task. The form asks for title, repo, and prompt. Worker routing stays internal.
+Open `http://localhost:8000/login`, enter your `OWNER_TOKEN`, and drop a task. The form asks for title, repo, and prompt. Worker routing stays internal.
 
 Start worker:
 
@@ -43,7 +43,7 @@ Start worker:
 cd worker
 go run . run \
   --server http://localhost:8000 \
-  --token worker_dev \
+  --token "$WORKER_TOKEN" \
   --worker local \
   --manifest deaddrop.manifest.example.json \
   --agent mock
@@ -114,7 +114,7 @@ The worker prompt tells Gemini to avoid commits/pushes and finish with a `DEADDR
 Override if your install differs:
 
 ```bash
-go run . run --server http://localhost:8000 --token worker_dev --worker local \
+go run . run --server http://localhost:8000 --token "$WORKER_TOKEN" --worker local \
   --repo ../examples/demo-repo --repo-alias default --agent custom \
   --command-template 'npx @google/gemini-cli -p "{{prompt}}"'
 ```
@@ -139,11 +139,11 @@ Run:
 
 ```bash
 cd worker
-go run . run --server http://localhost:8000 --token worker_dev --worker local \
+go run . run --server http://localhost:8000 --token "$WORKER_TOKEN" --worker local \
   --manifest deaddrop.manifest.example.json --agent gemini
 ```
 
-Phone UI can pick `repo_alias` from registered repos. Only local worker maps alias to path.
+Phone UI can pick `repo_alias` from registered repos. The server stores only alias, display name, worker name, and timestamps. Only the local worker knows and maps the real workspace directory.
 
 Use the manifest for any directory you want Gemini to work in:
 

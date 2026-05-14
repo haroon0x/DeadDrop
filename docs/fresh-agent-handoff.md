@@ -27,8 +27,8 @@ Terminal 1:
 
 ```bash
 cd server
-export OWNER_TOKEN=owner_dev
-export WORKER_TOKEN=worker_dev
+export OWNER_TOKEN="$(openssl rand -base64 32)"
+export WORKER_TOKEN="$(openssl rand -base64 32)"
 uv run uvicorn app.main:app --reload
 ```
 
@@ -38,13 +38,13 @@ Terminal 2:
 cd worker
 go run . run \
   --server http://localhost:8000 \
-  --token worker_dev \
+  --token "$WORKER_TOKEN" \
   --worker local \
   --manifest deaddrop.manifest.example.json \
   --agent mock
 ```
 
-Open `http://localhost:8000`, log in with `owner_dev`, create a job for repo `demo`.
+Open `http://localhost:8000`, log in with your `OWNER_TOKEN`, create a job for repo `demo`.
 
 ## Worker Contract
 

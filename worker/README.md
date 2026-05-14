@@ -5,7 +5,7 @@ Run local coding jobs from a trusted DeadDrop server.
 ```bash
 go run . run \
   --server http://localhost:8000 \
-  --token worker_dev \
+  --token "$WORKER_TOKEN" \
   --worker local \
   --manifest deaddrop.manifest.example.json \
   --agent mock
