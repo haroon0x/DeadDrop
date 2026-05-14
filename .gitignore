@@ -180,6 +180,7 @@ worker/worker
 
 # Local app databases
 deaddrop.db
+*.db
 *.sqlite
 *.sqlite3
 

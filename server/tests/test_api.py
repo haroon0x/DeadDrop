@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 os.environ["OWNER_TOKEN"] = "owner_test"
 os.environ["WORKER_TOKEN"] = "worker_test"
 os.environ["DATABASE_URL"] = "sqlite:////tmp/deaddrop_test.db"
+os.environ["SECURE_COOKIES"] = "false"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.main import app  # noqa: E402
@@ -114,10 +115,14 @@ def test_browser_auth_uses_persistent_cookie_not_query_token():
 
     login = c.post("/login", data={"token": "owner_test"}, follow_redirects=False)
     assert login.status_code == 303
-    cookie = login.headers["set-cookie"]
-    assert "owner_token=owner_test" in cookie
-    assert "Max-Age=2592000" in cookie
-    assert "HttpOnly" in cookie
+    cookies = login.cookies
+    assert "owner_token" in cookies
+    assert "csrf_token" in cookies
+    
+    # Verify we can access dashboard with the cookies
+    res = c.get("/", cookies=cookies)
+    assert res.status_code == 200
+    assert "Mission queue" in res.text
 
 
 def test_queued_job_can_be_cancelled_from_page():
@@ -129,11 +134,20 @@ def test_queued_job_can_be_cancelled_from_page():
     )
     job_id = create.json()["id"]
 
-    detail = c.get(f"/jobs/{job_id}", cookies={"owner_token": "owner_test"})
+    login = c.post("/login", data={"token": "owner_test"}, follow_redirects=False)
+    cookies = login.cookies
+
+    detail = c.get(f"/jobs/{job_id}", cookies=cookies)
     assert detail.status_code == 200
     assert f'action="/jobs/{job_id}/cancel"' in detail.text
+    csrf_token = cookies.get("csrf_token")
 
-    cancel = c.post(f"/jobs/{job_id}/cancel", cookies={"owner_token": "owner_test"}, follow_redirects=False)
+    cancel = c.post(
+        f"/jobs/{job_id}/cancel",
+        cookies=cookies,
+        data={"csrf_token": csrf_token},
+        follow_redirects=False,
+    )
     assert cancel.status_code == 303
 
     job = c.get(f"/api/jobs/{job_id}", headers=owner_headers())

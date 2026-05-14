@@ -8,7 +8,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import insert, text, update
 
 from . import models
-from .auth import owner_from_request, require_owner, require_worker, secure_cookies, validate_auth_config
+from .auth import (
+    generate_csrf_token,
+    owner_from_request,
+    require_owner,
+    require_worker,
+    secure_cookies,
+    validate_auth_config,
+    verify_csrf_token,
+)
 from .db import (
     claim_next_job,
     connect,
@@ -61,7 +69,8 @@ def dashboard(request: Request):
         return templates.TemplateResponse("landing.html", {"request": request})
     with connect() as conn:
         rows = list_job_records(conn)
-    return templates.TemplateResponse("dashboard.html", {"request": request, "jobs": rows})
+    csrf_token = request.cookies.get("csrf_token")
+    return templates.TemplateResponse("dashboard.html", {"request": request, "jobs": rows, "csrf_token": csrf_token})
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -76,11 +85,21 @@ def login(request: Request, token: str = Form(...)):
     if token != owner_token():
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid token"}, status_code=401)
     response = RedirectResponse("/", status_code=303)
+    # 1. Set Owner Token
     response.set_cookie(
         "owner_token",
         token,
         max_age=60 * 60 * 24 * 30,
         httponly=True,
+        secure=secure_cookies(),
+        samesite="lax",
+    )
+    # 2. Set CSRF Token (Not HttpOnly so JS can read it if needed, but primarily for Double Submit)
+    response.set_cookie(
+        "csrf_token",
+        generate_csrf_token(),
+        max_age=60 * 60 * 24 * 30,
+        httponly=False,
         secure=secure_cookies(),
         samesite="lax",
     )
@@ -99,10 +118,11 @@ def new_job_page(request: Request):
     ensure_owner_page(request)
     with connect() as conn:
         repos = list_worker_repos(conn)
-    return templates.TemplateResponse("new_job.html", {"request": request, "repos": repos})
+    csrf_token = request.cookies.get("csrf_token")
+    return templates.TemplateResponse("new_job.html", {"request": request, "repos": repos, "csrf_token": csrf_token})
 
 
-@app.post("/jobs")
+@app.post("/jobs", dependencies=[Depends(verify_csrf_token)])
 def create_job_form(
     request: Request,
     title: str = Form(...),
@@ -125,10 +145,11 @@ def job_detail_page(request: Request, job_id: int):
         job = get_job(conn, job_id, include_logs=True, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return templates.TemplateResponse("job_detail.html", {"request": request, "job": job})
+    csrf_token = request.cookies.get("csrf_token")
+    return templates.TemplateResponse("job_detail.html", {"request": request, "job": job, "csrf_token": csrf_token})
 
 
-@app.post("/jobs/{job_id}/cancel")
+@app.post("/jobs/{job_id}/cancel", dependencies=[Depends(verify_csrf_token)])
 def cancel_job_form(request: Request, job_id: int):
     ensure_owner_page(request)
     cancel_job(job_id)

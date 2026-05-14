@@ -1,7 +1,8 @@
 import os
+import secrets
 from secrets import compare_digest
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Form, Header, HTTPException, Request
 
 def _bearer(authorization: str | None) -> str | None:
     if not authorization:
@@ -43,10 +44,32 @@ def owner_from_request(request: Request) -> bool:
     return token is not None and compare_digest(token, owner_token())
 
 
+def generate_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def verify_csrf_token(request: Request, csrf_token: str = Form(None)) -> None:
+    # 1. Get token from cookie
+    cookie_token = request.cookies.get("csrf_token")
+    # 2. Get token from form or header
+    header_token = request.headers.get("X-CSRF-Token")
+    provided_token = csrf_token or header_token
+    
+    if not cookie_token or not provided_token or not compare_digest(cookie_token, provided_token):
+        raise HTTPException(status_code=403, detail="CSRF token validation failed")
+
+
 def secure_cookies() -> bool:
-    return os.getenv("SECURE_COOKIES", "").lower() in {"1", "true", "yes"}
+    # Default to True for production security. 
+    # Only allow False if explicitly requested (for local dev without HTTPS).
+    return os.getenv("SECURE_COOKIES", "true").lower() not in {"0", "false", "no"}
 
 
 def validate_auth_config() -> None:
+
+    # Fail fast if tokens are missing in production
+    if not os.getenv("OWNER_TOKEN") or not os.getenv("WORKER_TOKEN"):
+        if os.getenv("DATABASE_URL"): # Sign of production
+            raise RuntimeError("OWNER_TOKEN and WORKER_TOKEN must be set in production")
     owner_token()
     worker_token()

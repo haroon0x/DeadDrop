@@ -12,6 +12,7 @@
   </dl>
   {% if job.status == "queued" %}
   <form method="post" action="/jobs/{{ job.id }}/cancel" class="inline-action">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" class="secondary-button">Cancel queued job</button>
   </form>
   {% endif %}

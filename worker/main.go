@@ -7,6 +7,10 @@ import (
 )
 
 func main() {
+	if os.Getuid() == 0 {
+		fmt.Fprintln(os.Stderr, "Error: For security, DeadDrop worker must NOT be run as root.")
+		os.Exit(1)
+	}
 	cfg, err := parseConfig(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

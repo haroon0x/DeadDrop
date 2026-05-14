@@ -5,6 +5,7 @@
   <p class="eyebrow">New job</p>
   <h1>Drop a task</h1>
   <form method="post" action="/jobs" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>
       Title
       <input name="title" required placeholder="Fix failing demo test">

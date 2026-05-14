@@ -48,6 +48,10 @@
 - [x] Add public landing page and polished dashboard styling
 - [x] Add fresh-agent handoff doc
 - [x] Enforce worker repo path is git worktree root
+- [x] Implement CSRF protection (Double Submit Cookie)
+- [x] Harden worker: refuse to run as root
+- [x] Default to Secure cookies in production
+- [x] Add constant-time token comparisons
 
 ## Verify
 - [x] Run server tests

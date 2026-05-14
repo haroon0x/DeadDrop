@@ -4,7 +4,18 @@ DeadDrop is a local-first coding task inbox. Leave a coding task from your phone
 
 Tagline: **Leave a coding task. Come back to the diff.**
 
-## Why It Exists
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+## Deploy Your Own in 5 Minutes
+
+DeadDrop is designed for sovereign use. You can host your own private task inbox for free on Render and Supabase.
+
+1.  **Fork this repo** to your GitHub account.
+2.  **Click the button above** (or create a "Blueprint" on Render pointing to your fork).
+3.  **Follow the [Detailed Deployment Guide](docs/deployment.md)** to set up your free Supabase database and Render environment variables.
+4.  **Start your local worker** using your `WORKER_TOKEN` and your Render URL.
+
+---
 
 DeadDrop is for async coding work where your code, credentials, and tools stay on your machine. It is job-first: every task has status, logs, output, diff, and a receipt. It is not a chatbot, remote desktop, or general assistant.
 
@@ -28,7 +39,7 @@ Start server with `uv`:
 ```bash
 cd server
 uv sync
-export OWNER_TOKEN="$(openssl rand -base64 32)"
+export OWNER_TOKEN="$(openssl rand -base64 32)" # Generates a secure 32-byte random secret
 export WORKER_TOKEN="$(openssl rand -base64 32)"
 uv run uvicorn app.main:app --reload
 ```
@@ -163,30 +174,43 @@ MVP uses one internal worker named `local`. The server stores it only to route q
 
 ## Deploying Server To Render
 
-Use the root `render.yaml` blueprint for hosted deploys. It builds `server/Dockerfile`.
+Use the root `render.yaml` blueprint for hosted deploys. It builds a secure Docker container using the provided `server/Dockerfile`.
 
-Set these Render environment variables:
+### Configuration Checklist:
 
-- `OWNER_TOKEN`: generate locally with `openssl rand -base64 32`
-- `WORKER_TOKEN`: generate locally with `openssl rand -base64 32`; use the same value when starting your local worker
-- `DATABASE_URL`: Supabase Postgres connection string
-- `SECURE_COOKIES=true`
+1.  **Tokens**: Generate two unique, long random strings (e.g., `openssl rand -base64 32`).
+    *   `OWNER_TOKEN`: Used to log into the web dashboard.
+    *   `WORKER_TOKEN`: Used by your local Go worker to authenticate.
+2.  **Database**: Create a free project on Supabase.
+    *   Go to **Settings > Database > Connection Pooler**.
+    *   Set mode to **Transaction**.
+    *   Copy the **Pooled Connection String** (Port 6543).
+3.  **Render Environment**:
+    *   `DATABASE_URL`: Set to your pooled Supabase URL.
+    *   `SECURE_COOKIES`: Set to `true` (enforces HTTPS/SSL).
+    *   `OWNER_TOKEN` & `WORKER_TOKEN`: Set to the strings you generated.
 
-Do not add `PORT` to `.env.example`. Render injects `PORT` at runtime, and `server/Dockerfile` falls back to `8000` for local Docker runs.
-
-For production/demo, set `DATABASE_URL` to the Supabase Postgres connection string. Do not rely on Render local filesystem persistence. Local development can use SQLite with `DATABASE_URL=sqlite:///./deaddrop.db`.
+Once deployed, your server is a secure, private inbox for your coding tasks.
 
 ## Security Model
 
-DeadDrop uses bearer tokens. Browser/API requests need `OWNER_TOKEN`. Worker requests need `WORKER_TOKEN`.
+DeadDrop is built with a "Trust but Verify" security model:
 
-Only run the worker against servers and tokens you trust. A queued task can cause your local agent command to edit files inside configured manifest repos. The worker ignores server-provided paths and uses only local manifest/flag paths.
+1.  **Authentication**: All requests require a `Bearer` token.
+    -   Browser/API requests use `OWNER_TOKEN`.
+    -   Worker polling requests use `WORKER_TOKEN`.
+    -   Comparisons use constant-time checks (`compare_digest`) to prevent timing attacks.
+2.  **CSRF Protection**: All dashboard forms use the Double Submit Cookie pattern with a cryptographically secure token to prevent Cross-Site Request Forgery.
+3.  **Transit Security (MITM)**: 
+    -   In production, `SECURE_COOKIES` defaults to `true`, forcing cookies to be sent only over HTTPS. 
+    -   Use the Supabase Connection Pooler (Port 6543) for production database connections to ensure IPv4 compatibility and encrypted transit.
+4.  **Worker Hardening**:
+    -   **No Root**: The worker refuses to run as `root` (UID 0) to minimize impact if a task is malicious.
+    -   **Path Isolation**: The worker only operates within repositories explicitly defined in your local manifest. It validates that the path is a git worktree root to prevent directory traversal attacks.
+    -   **No Auto-Commit**: Gemini is explicitly instructed to never `git commit` or `git push`. You review the diff on the dashboard and apply it manually.
+5.  **Agent Safety**: Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). Timed-out agents are killed by process group, mark the job failed, and still upload logs/diff where possible.
 
-DeadDrop does not commit by default. Gemini is explicitly told not to run `git commit` or `git push`; dashboard shows diff and receipt so human can accept/reject later.
-
-Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). Timed-out agents are killed by process group, mark the job failed, and still upload logs/diff where possible.
-
-For smoke checks or one-shot process managers, use `--run-once`. The worker registers repos, polls once, processes at most one job, reports the result, and exits.
+Only run the worker against servers and tokens you trust. A queued task can cause your local agent command to edit files inside configured manifest repos.
 
 ## Limitations
 
