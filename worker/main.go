@@ -21,28 +21,47 @@ func main() {
 		job, err := client.Next(cfg.Worker)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			if cfg.RunOnce {
+				os.Exit(1)
+			}
 			time.Sleep(cfg.PollInterval)
 			continue
 		}
 		if job == nil {
+			if cfg.RunOnce {
+				return
+			}
 			time.Sleep(cfg.PollInterval)
 			continue
 		}
-		result := runJob(cfg, client, *job)
-		if result.Err != nil || result.ExitCode != 0 {
-			msg := ""
-			if result.Err != nil {
-				msg = result.Err.Error()
-			}
-			if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.Diff); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-			}
-			continue
-		}
-		if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.Diff); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		code := handleJob(cfg, client, *job)
+		if cfg.RunOnce {
+			os.Exit(code)
 		}
 	}
+}
+
+func handleJob(cfg Config, client Client, job Job) int {
+	result := runJob(cfg, client, job)
+	if result.Err != nil || result.ExitCode != 0 {
+		msg := ""
+		if result.Err != nil {
+			msg = result.Err.Error()
+		}
+		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.Diff); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if result.ExitCode != 0 {
+			return result.ExitCode
+		}
+		return 1
+	}
+	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.Diff); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func registerRepos(cfg Config, client Client) error {

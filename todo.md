@@ -1,10 +1,10 @@
 # DeadDrop Todo
 
 ## Fresh Agent Handoff
-- Read this file first, then `spec.md`, then `deaddrop/README.md`.
-- Current implementation lives under `deaddrop/`.
-- Server uses FastAPI + SQLite + Jinja templates. Run with `cd deaddrop/server && uv run uvicorn app.main:app --reload`.
-- Worker uses Go. Preferred run: `cd deaddrop/worker && go run . run --server http://localhost:8000 --token worker_dev --worker local --manifest deaddrop.manifest.example.json --agent mock`.
+- Read this file first, then `spec.md`, then `README.md`, then `docs/fresh-agent-handoff.md`.
+- Current implementation lives at repo root: `server/`, `worker/`, and `examples/`.
+- Server uses FastAPI + SQLAlchemy + Jinja templates. Local dev defaults to SQLite; production/demo uses Supabase Postgres via `DATABASE_URL`. Run with `cd server && uv run uvicorn app.main:app --reload`.
+- Worker uses Go. Preferred run: `cd worker && go run . run --server http://localhost:8000 --token worker_dev --worker local --manifest deaddrop.manifest.example.json --agent mock`.
 - Worker manifest registers repo aliases with server. Server stores aliases/display names only, not absolute paths. Phone UI dropdown reads registered repos.
 - MVP has one internal worker named `local`; frontend intentionally hides worker choice.
 - Gemini CLI exists on this machine: `gemini --version` returned `0.41.2`. A direct smoke command returned `GEMINI_OK`, with extension warnings and one transient 429 retry.
@@ -12,19 +12,21 @@
 - Mock smoke initially showed blank log lines can produce 422 responses. Worker now skips blank log content before posting.
 - Gemini default command is `gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"`.
 - Worker extracts final summaries from `DEADDROP_RECEIPT` / `DEADDROP_RECEIPT_END` markers and has `--agent-timeout`.
+- Worker has `--run-once` for smoke tests and kills the spawned process group on timeout.
 - Receipt content is intentionally free-form; only markers are strict. Missing markers on exit 0 fail the job.
-- SQLite on free Render is not durable across restart/redeploy. Polling does not fix disk persistence. Free upgrade options: Turso/libSQL for SQLite-like, Supabase/Neon for Postgres.
-- Demo repo has its own git repo initialized for clean diffs. Reset demo by editing `deaddrop/examples/demo-repo/app.py` back to `return a - b` and committing/resetting as needed.
+- Render local filesystem persistence is not used for production/demo. Set `DATABASE_URL` to Supabase Postgres. SQLite remains allowed only for quick local tests.
+- Demo repo has its own git repo initialized for clean diffs. Reset demo by editing `examples/demo-repo/app.py` back to `return a - b` and committing/resetting as needed.
+- Worker now rejects manifest paths that are subdirectories of a larger git repo. Each workspace alias should point at the git worktree root.
 - Avoid long comments; keep code functional and small.
 
 ## Spec Review
 - [x] Read `spec.md`
-- [x] Identify MVP risks: Render SQLite persistence, local command execution trust boundary, running cancellation scope
+- [x] Identify MVP risks: DB persistence, local command execution trust boundary, running cancellation scope
 
 ## Build
 - [x] Scaffold monorepo structure
 - [x] Build FastAPI server APIs
-- [x] Build SQLite persistence
+- [x] Build SQLAlchemy persistence with local SQLite default
 - [x] Build mobile-friendly Jinja pages
 - [x] Build Go worker CLI
 - [x] Add mock agent mode with deterministic demo fix
@@ -42,6 +44,9 @@
 - [x] Add worker-side agent timeout
 - [x] Harness Gemini prompt with receipt markers and summary extraction
 - [x] Make receipt content free-form while enforcing wrapper markers
+- [x] Add public landing page and polished dashboard styling
+- [x] Add fresh-agent handoff doc
+- [x] Enforce worker repo path is git worktree root
 
 ## Verify
 - [x] Run server tests
@@ -57,8 +62,13 @@
 - [ ] Run full worker Gemini mode against demo repo after Gemini capacity is available
 
 ## Next
-- [ ] Add persistent auth session UI instead of token query/localStorage bridge
-- [ ] Add queued-only cancellation in UI
-- [ ] Add log pagination for large jobs
-- [ ] Replace SQLite with Turso/libSQL or add Postgres adapter for durable free hosting
+- [x] Add persistent auth session UI instead of token query/localStorage bridge
+- [x] Add queued-only cancellation in UI
+- [x] Add log pagination for large jobs
+- [x] Add production DB adapter: SQLAlchemy with `DATABASE_URL` for Supabase Postgres
+- [x] Add process-group timeout kill so hung agent child processes do not survive
+- [x] Add worker run-once mode for smoke tests and one-shot deployments
+- [x] Add `/healthz` and `/readyz` endpoints for hosted monitoring
+- [ ] Add running-job cancellation protocol from server to worker
+- [ ] Add deployment guide with exact Render + Supabase settings
 - [ ] Add accept/reject action after diff review, only if MVP demo still feels incomplete

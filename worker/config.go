@@ -27,6 +27,7 @@ type Config struct {
 	PollInterval    time.Duration
 	AgentTimeout    time.Duration
 	DryRun          bool
+	RunOnce         bool
 	CommandTemplate string
 }
 
@@ -46,6 +47,7 @@ func parseConfig(args []string) (Config, error) {
 	fs.StringVar(&cfg.Manifest, "manifest", "", "workspace manifest JSON path")
 	fs.StringVar(&cfg.Agent, "agent", "gemini", "agent mode: mock, gemini, custom")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "log command without running it")
+	fs.BoolVar(&cfg.RunOnce, "run-once", false, "poll once, process at most one job, then exit")
 	fs.StringVar(&cfg.CommandTemplate, "command-template", "", "custom command template")
 	if err := fs.Parse(args[1:]); err != nil {
 		return Config{}, err

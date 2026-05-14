@@ -13,7 +13,7 @@ DeadDrop is for async coding work where your code, credentials, and tools stay o
 ```text
 Phone/browser
   -> FastAPI server on Render
-  -> SQLite job inbox
+  -> SQLAlchemy job inbox
   <- Go worker polls with WORKER_TOKEN
   -> local repo + Gemini/mock/custom agent
   -> logs + summary + git diff back to server
@@ -26,7 +26,7 @@ The server never connects to your PC. The worker polls outbound.
 Start server with `uv`:
 
 ```bash
-cd deaddrop/server
+cd server
 uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
@@ -40,7 +40,7 @@ Open `http://localhost:8000/login`, enter `owner_dev`, and drop a task. The form
 Start worker:
 
 ```bash
-cd deaddrop/worker
+cd worker
 go run . run \
   --server http://localhost:8000 \
   --token worker_dev \
@@ -54,7 +54,7 @@ Try task: `Fix the failing test in the demo repo. Do not commit.`
 For a clean demo diff, initialize the demo repo once:
 
 ```bash
-cd deaddrop/examples/demo-repo
+cd examples/demo-repo
 git init
 git add .
 git commit -m "demo baseline"
@@ -66,13 +66,14 @@ Environment:
 
 - `OWNER_TOKEN`: browser/API token
 - `WORKER_TOKEN`: worker token
-- `SQLITE_PATH`: optional DB path, defaults to `./deaddrop.db`
+- `DATABASE_URL`: SQLAlchemy database URL, defaults to `sqlite:///./deaddrop.db`
 - `DEMO_MODE`: optional, defaults to enabled
+- `SECURE_COOKIES`: set to `true` behind HTTPS in production
 
 Run tests:
 
 ```bash
-cd deaddrop/server
+cd server
 uv run pytest
 ```
 
@@ -81,7 +82,7 @@ uv run pytest
 Build:
 
 ```bash
-cd deaddrop/worker
+cd worker
 go build -o deaddrop-worker .
 ```
 
@@ -96,6 +97,7 @@ Flags:
 - `--agent` (`mock`, `gemini`, `custom`)
 - `--poll-interval`
 - `--agent-timeout`
+- `--run-once`
 - `--dry-run`
 - `--command-template`
 
@@ -119,7 +121,7 @@ go run . run --server http://localhost:8000 --token worker_dev --worker local \
 
 ## Workspace Manifest
 
-The server never stores absolute local paths. The worker owns a trusted local workspace manifest and registers aliases with the server on startup:
+The server never stores absolute local paths. The worker owns a trusted local workspace manifest and registers aliases with the server on startup. Each path must be a git worktree root; pointing an alias at a subdirectory of another repo is rejected so diffs cannot include unrelated files.
 
 ```json
 {
@@ -136,12 +138,28 @@ The server never stores absolute local paths. The worker owns a trusted local wo
 Run:
 
 ```bash
-cd deaddrop/worker
+cd worker
 go run . run --server http://localhost:8000 --token worker_dev --worker local \
   --manifest deaddrop.manifest.example.json --agent gemini
 ```
 
 Phone UI can pick `repo_alias` from registered repos. Only local worker maps alias to path.
+
+Use the manifest for any directory you want Gemini to work in:
+
+```json
+{
+  "repos": [
+    {
+      "alias": "my-app",
+      "name": "My app",
+      "path": "/absolute/path/to/my-app"
+    }
+  ]
+}
+```
+
+Gemini receives the user's task and DeadDrop's safety prompt, runs inside that workspace, and returns a receipt. The human reviews the captured diff before committing locally.
 
 MVP uses one internal worker named `local`. The server stores it only to route queued jobs to the polling worker; users should not need to choose it.
 
@@ -149,12 +167,12 @@ MVP uses one internal worker named `local`. The server stores it only to route q
 
 Create a Web Service from this repo and set:
 
-- Root directory: `deaddrop/server`
+- Root directory: `server`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Env vars: `OWNER_TOKEN`, `WORKER_TOKEN`, `SQLITE_PATH=/var/data/deaddrop.db`
+- Env vars: `OWNER_TOKEN`, `WORKER_TOKEN`, `DATABASE_URL`, `SECURE_COOKIES=true`
 
-SQLite on Render is acceptable for MVP demos. Render free filesystems are not durable across restarts/redeploys, even if the worker polls continuously. Use a persistent disk where available, or swap the server DB layer to a free hosted database. Best free SQLite-shaped option: Turso/libSQL. Best free Postgres-shaped options: Supabase or Neon.
+For production/demo, set `DATABASE_URL` to the Supabase Postgres connection string. Do not rely on Render local filesystem persistence. Local development can use SQLite with `DATABASE_URL=sqlite:///./deaddrop.db`.
 
 ## Security Model
 
@@ -164,7 +182,9 @@ Only run the worker against servers and tokens you trust. A queued task can caus
 
 DeadDrop does not commit by default. Gemini is explicitly told not to run `git commit` or `git push`; dashboard shows diff and receipt so human can accept/reject later.
 
-Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). Timed-out agents mark the job failed and still upload logs/diff.
+Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). Timed-out agents are killed by process group, mark the job failed, and still upload logs/diff where possible.
+
+For smoke checks or one-shot process managers, use `--run-once`. The worker registers repos, polls once, processes at most one job, reports the result, and exits.
 
 ## Limitations
 
@@ -175,13 +195,12 @@ Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). 
 - No arbitrary repo switching from server
 - No complex sandboxing
 - Running job cancellation is not implemented
-- SQLite is not a durable production database unless backed by persistent disk
+- Production requires Supabase Postgres through `DATABASE_URL`
 
 ## What I Would Build Next
 
+- Supabase deployment guide and live smoke
+- Running-job cancellation endpoint backed by worker-side abort signal
 - Accept/reject flow that can create a local commit after human approval
-- Better cancellation via process groups
-- Log pagination and artifact retention
+- Artifact retention
 - Per-worker token records
-- Webhook or push notifications
-- Durable database for hosted production use

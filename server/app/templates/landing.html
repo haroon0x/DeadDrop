@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeadDrop</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="landing-body">
+  <header class="landing-nav">
+    <a class="brand" href="/">DeadDrop</a>
+    <nav>
+      <a href="/demo">Demo</a>
+      <a class="nav-button" href="/login">Open dashboard</a>
+    </nav>
+  </header>
+
+  <main class="landing-shell">
+    <section class="landing-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Local-first agent queue</p>
+        <h1>Leave a coding task. Come back to the diff.</h1>
+        <p class="lede">DeadDrop lets your phone drop work into a hosted inbox while a local worker runs Gemini inside the workspace directories you trust.</p>
+        <div class="hero-actions">
+          <a class="button" href="/login">Open dashboard</a>
+          <a class="ghost-button" href="/demo">View demo receipt</a>
+        </div>
+      </div>
+      <div class="terminal-showcase" aria-label="DeadDrop workflow preview">
+        <div class="terminal-top">
+          <span>workspace/demo</span>
+          <span class="status-dot"></span>
+        </div>
+        <div class="terminal-lines">
+          <span>repo_alias: demo</span>
+          <span>agent: gemini</span>
+          <span>task: fix failing test, do not commit</span>
+          <span class="terminal-accent">DEADDROP_RECEIPT</span>
+          <span>Changed app.py. Tests pass. Review diff.</span>
+          <span class="terminal-accent">DEADDROP_RECEIPT_END</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="workflow-band" aria-label="How DeadDrop works">
+      <div>
+        <span class="step-number">01</span>
+        <h2>Choose workspace</h2>
+        <p>Worker manifest maps aliases to local git roots. Server stores aliases, never absolute paths.</p>
+      </div>
+      <div>
+        <span class="step-number">02</span>
+        <h2>Drop mission</h2>
+        <p>Dashboard creates a queued job with prompt, repo alias, status, live logs, and cancel support.</p>
+      </div>
+      <div>
+        <span class="step-number">03</span>
+        <h2>Review diff</h2>
+        <p>Gemini runs locally, DeadDrop captures receipt and git diff, no commit created by default.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

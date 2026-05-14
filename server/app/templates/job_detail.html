@@ -21,7 +21,7 @@
 <script>
   const receipt = document.getElementById("receipt");
   async function refreshReceipt() {
-    const res = await fetch(`/jobs/${receipt.dataset.jobId}/fragment`, { credentials: "same-origin" });
+    const res = await fetch(`/jobs/${receipt.dataset.jobId}/fragment${window.location.search}`, { credentials: "same-origin" });
     if (res.ok) receipt.innerHTML = await res.text();
   }
   setInterval(refreshReceipt, 2000);

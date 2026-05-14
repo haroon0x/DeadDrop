@@ -5,10 +5,24 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import insert, text, update
 
 from . import models
-from .auth import owner_from_request, require_owner, require_worker
-from .db import connect, get_job, init_db, now_iso, touch_worker
+from .auth import owner_from_request, require_owner, require_worker, secure_cookies
+from .db import (
+    claim_next_job,
+    connect,
+    create_job_record,
+    get_job,
+    init_db,
+    jobs,
+    job_logs,
+    list_jobs as list_job_records,
+    list_worker_repos,
+    now_iso,
+    touch_worker,
+    upsert_worker_repo,
+)
 from .schemas import CompleteJob, FailJob, JobCreate, LogCreate, WorkerRegister
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -23,6 +37,18 @@ def startup() -> None:
     init_db()
 
 
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz():
+    with connect() as conn:
+        conn.execute(text("SELECT 1")).fetchone()
+    return {"ok": True}
+
+
 def ensure_owner_page(request: Request) -> None:
     if not owner_from_request(request):
         raise HTTPException(status_code=303, headers={"Location": "/login"})
@@ -30,10 +56,11 @@ def ensure_owner_page(request: Request) -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
-    ensure_owner_page(request)
+    if not owner_from_request(request):
+        return templates.TemplateResponse("landing.html", {"request": request})
     with connect() as conn:
-        jobs = [dict(row) for row in conn.execute("SELECT * FROM jobs ORDER BY datetime(created_at) DESC, id DESC")]
-    return templates.TemplateResponse("dashboard.html", {"request": request, "jobs": jobs})
+        rows = list_job_records(conn)
+    return templates.TemplateResponse("dashboard.html", {"request": request, "jobs": rows})
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -48,14 +75,21 @@ def login(request: Request, token: str = Form(...)):
     if token != owner_token():
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid token"}, status_code=401)
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie("owner_token", token, httponly=True, samesite="lax")
+    response.set_cookie(
+        "owner_token",
+        token,
+        max_age=60 * 60 * 24 * 30,
+        httponly=True,
+        secure=secure_cookies(),
+        samesite="lax",
+    )
     return response
 
 
 @app.get("/logout")
 def logout():
     response = RedirectResponse("/login", status_code=303)
-    response.delete_cookie("owner_token")
+    response.delete_cookie("owner_token", secure=secure_cookies(), samesite="lax")
     return response
 
 
@@ -63,12 +97,7 @@ def logout():
 def new_job_page(request: Request):
     ensure_owner_page(request)
     with connect() as conn:
-        repos = [
-            dict(row)
-            for row in conn.execute(
-                "SELECT * FROM worker_repos ORDER BY worker_name, repo_alias"
-            ).fetchall()
-        ]
+        repos = list_worker_repos(conn)
     return templates.TemplateResponse("new_job.html", {"request": request, "repos": repos})
 
 
@@ -89,18 +118,29 @@ def create_job_form(
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
 def job_detail_page(request: Request, job_id: int):
     ensure_owner_page(request)
+    before = request.query_params.get("before_log_id")
+    before_log_id = int(before) if before and before.isdigit() else None
     with connect() as conn:
-        job = get_job(conn, job_id, include_logs=True)
+        job = get_job(conn, job_id, include_logs=True, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return templates.TemplateResponse("job_detail.html", {"request": request, "job": job})
 
 
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job_form(request: Request, job_id: int):
+    ensure_owner_page(request)
+    cancel_job(job_id)
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
 @app.get("/jobs/{job_id}/fragment", response_class=HTMLResponse)
 def job_fragment(request: Request, job_id: int):
     ensure_owner_page(request)
+    before = request.query_params.get("before_log_id")
+    before_log_id = int(before) if before and before.isdigit() else None
     with connect() as conn:
-        job = get_job(conn, job_id, include_logs=True)
+        job = get_job(conn, job_id, include_logs=True, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return templates.TemplateResponse("_job_receipt.html", {"request": request, "job": job})
@@ -115,37 +155,37 @@ def demo(request: Request):
 def create_job(job: JobCreate):
     ts = now_iso()
     with connect() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO jobs (title, prompt, repo_alias, worker_name, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (job.title, job.prompt, job.repo_alias, job.worker_name, models.QUEUED, ts, ts),
+        job_id = create_job_record(
+            conn,
+            {
+                "title": job.title,
+                "prompt": job.prompt,
+                "repo_alias": job.repo_alias,
+                "worker_name": job.worker_name,
+                "status": models.QUEUED,
+                "created_at": ts,
+                "updated_at": ts,
+            },
         )
-        return get_job(conn, cur.lastrowid, include_logs=True)
+        return get_job(conn, job_id, include_logs=True)
 
 
 @app.get("/api/jobs", dependencies=[Depends(require_owner)])
 def list_jobs():
     with connect() as conn:
-        return [dict(row) for row in conn.execute("SELECT * FROM jobs ORDER BY datetime(created_at) DESC, id DESC")]
+        return list_job_records(conn)
 
 
 @app.get("/api/repos", dependencies=[Depends(require_owner)])
 def list_repos():
     with connect() as conn:
-        return [
-            dict(row)
-            for row in conn.execute(
-                "SELECT worker_name, repo_alias, display_name, last_seen_at FROM worker_repos ORDER BY worker_name, repo_alias"
-            ).fetchall()
-        ]
+        return list_worker_repos(conn)
 
 
 @app.get("/api/jobs/{job_id}", dependencies=[Depends(require_owner)])
-def api_job(job_id: int):
+def api_job(job_id: int, log_limit: int = 200, before_log_id: int | None = None):
     with connect() as conn:
-        job = get_job(conn, job_id, include_logs=True)
+        job = get_job(conn, job_id, include_logs=True, log_limit=log_limit, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -163,8 +203,9 @@ def cancel_job(job_id: int):
         if job["status"] != models.QUEUED:
             return {"message": f"Job is already {job['status']}"}
         conn.execute(
-            "UPDATE jobs SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?",
-            (models.CANCELLED, ts, ts, job_id),
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(status=models.CANCELLED, updated_at=ts, completed_at=ts)
         )
         return get_job(conn, job_id, include_logs=True)
 
@@ -173,24 +214,11 @@ def cancel_job(job_id: int):
 def worker_next(worker_name: str = "local"):
     ts = now_iso()
     with connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         touch_worker(conn, worker_name)
-        row = conn.execute(
-            """
-            SELECT id FROM jobs
-            WHERE status = ? AND worker_name = ?
-            ORDER BY datetime(created_at) ASC, id ASC
-            LIMIT 1
-            """,
-            (models.QUEUED, worker_name),
-        ).fetchone()
-        if not row:
+        job = claim_next_job(conn, worker_name, ts)
+        if not job:
             return Response(status_code=204)
-        conn.execute(
-            "UPDATE jobs SET status = ?, started_at = ?, updated_at = ? WHERE id = ?",
-            (models.RUNNING, ts, ts, row["id"]),
-        )
-        return get_job(conn, row["id"], include_logs=True)
+        return job
 
 
 @app.post("/api/worker/register", dependencies=[Depends(require_worker)])
@@ -203,15 +231,7 @@ def register_worker(body: WorkerRegister):
             if not alias:
                 continue
             display = repo.display_name.strip() or alias
-            conn.execute(
-                """
-                INSERT INTO worker_repos (worker_name, repo_alias, display_name, last_seen_at, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(worker_name, repo_alias)
-                DO UPDATE SET display_name = excluded.display_name, last_seen_at = excluded.last_seen_at
-                """,
-                (body.worker_name, alias, display, ts, ts),
-            )
+            upsert_worker_repo(conn, body.worker_name, alias, display, ts)
     return {"ok": True}
 
 
@@ -220,7 +240,7 @@ def heartbeat(job_id: int, worker_name: str = "local"):
     ts = now_iso()
     with connect() as conn:
         touch_worker(conn, worker_name)
-        conn.execute("UPDATE jobs SET updated_at = ? WHERE id = ?", (ts, job_id))
+        conn.execute(update(jobs).where(jobs.c.id == job_id).values(updated_at=ts))
     return {"ok": True}
 
 
@@ -233,10 +253,9 @@ def append_log(job_id: int, log: LogCreate):
         if not get_job(conn, job_id):
             raise HTTPException(status_code=404, detail="Job not found")
         conn.execute(
-            "INSERT INTO job_logs (job_id, timestamp, stream, content) VALUES (?, ?, ?, ?)",
-            (job_id, ts, log.stream, log.content),
+            insert(job_logs).values(job_id=job_id, timestamp=ts, stream=log.stream, content=log.content)
         )
-        conn.execute("UPDATE jobs SET updated_at = ? WHERE id = ?", (ts, job_id))
+        conn.execute(update(jobs).where(jobs.c.id == job_id).values(updated_at=ts))
     return {"ok": True}
 
 
@@ -247,12 +266,16 @@ def complete_job(job_id: int, body: CompleteJob):
         if not get_job(conn, job_id):
             raise HTTPException(status_code=404, detail="Job not found")
         conn.execute(
-            """
-            UPDATE jobs
-            SET status = ?, exit_code = ?, final_summary = ?, git_diff = ?, updated_at = ?, completed_at = ?
-            WHERE id = ?
-            """,
-            (models.COMPLETED, body.exit_code, body.final_summary, body.git_diff, ts, ts, job_id),
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(
+                status=models.COMPLETED,
+                exit_code=body.exit_code,
+                final_summary=body.final_summary,
+                git_diff=body.git_diff,
+                updated_at=ts,
+                completed_at=ts,
+            )
         )
         return get_job(conn, job_id, include_logs=True)
 
@@ -264,11 +287,16 @@ def fail_job(job_id: int, body: FailJob):
         if not get_job(conn, job_id):
             raise HTTPException(status_code=404, detail="Job not found")
         conn.execute(
-            """
-            UPDATE jobs
-            SET status = ?, exit_code = ?, error_message = ?, final_summary = ?, git_diff = ?, updated_at = ?, completed_at = ?
-            WHERE id = ?
-            """,
-            (models.FAILED, body.exit_code, body.error_message, body.final_summary, body.git_diff, ts, ts, job_id),
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(
+                status=models.FAILED,
+                exit_code=body.exit_code,
+                error_message=body.error_message,
+                final_summary=body.final_summary,
+                git_diff=body.git_diff,
+                updated_at=ts,
+                completed_at=ts,
+            )
         )
         return get_job(conn, job_id, include_logs=True)

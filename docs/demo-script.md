@@ -11,7 +11,7 @@
 Gemini demo:
 
 ```bash
-cd deaddrop/worker
+cd worker
 go run . run --server http://localhost:8000 --token worker_dev --worker local \
   --repo ../examples/demo-repo --repo-alias default --agent gemini
 ```

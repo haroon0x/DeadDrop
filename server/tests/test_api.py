@@ -6,18 +6,19 @@ from fastapi.testclient import TestClient
 
 os.environ["OWNER_TOKEN"] = "owner_test"
 os.environ["WORKER_TOKEN"] = "worker_test"
-os.environ["SQLITE_PATH"] = "/tmp/deaddrop_test.db"
+os.environ["DATABASE_URL"] = "sqlite:////tmp/deaddrop_test.db"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.main import app  # noqa: E402
-from app.db import init_db  # noqa: E402
+from app.db import init_db, reset_engine_for_tests  # noqa: E402
 
 
 def client():
     try:
-        os.remove(os.environ["SQLITE_PATH"])
+        os.remove("/tmp/deaddrop_test.db")
     except FileNotFoundError:
         pass
+    reset_engine_for_tests()
     init_db()
     return TestClient(app)
 
@@ -34,6 +35,12 @@ def test_auth_rejects_bad_owner_token():
     c = client()
     res = c.get("/api/jobs", headers={"Authorization": "Bearer bad"})
     assert res.status_code == 401
+
+
+def test_health_and_ready_endpoints():
+    c = client()
+    assert c.get("/healthz").json() == {"ok": True}
+    assert c.get("/readyz").json() == {"ok": True}
 
 
 def test_create_job_and_worker_flow():
@@ -91,3 +98,68 @@ def test_new_job_page_hides_worker_choice_and_shows_repo_dropdown():
     assert 'name="repo_alias"' in res.text
     assert 'type="hidden" name="worker_name"' in res.text
     assert ">Worker<" not in res.text
+
+
+def test_browser_auth_uses_persistent_cookie_not_query_token():
+    c = client()
+    query_res = c.get("/?token=owner_test", follow_redirects=False)
+    assert query_res.status_code == 200
+    assert "Leave a coding task" in query_res.text
+    assert "Mission queue" not in query_res.text
+
+    login = c.post("/login", data={"token": "owner_test"}, follow_redirects=False)
+    assert login.status_code == 303
+    cookie = login.headers["set-cookie"]
+    assert "owner_token=owner_test" in cookie
+    assert "Max-Age=2592000" in cookie
+    assert "HttpOnly" in cookie
+
+
+def test_queued_job_can_be_cancelled_from_page():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Cancel me", "prompt": "No-op", "repo_alias": "default", "worker_name": "local"},
+    )
+    job_id = create.json()["id"]
+
+    detail = c.get(f"/jobs/{job_id}", cookies={"owner_token": "owner_test"})
+    assert detail.status_code == 200
+    assert f'action="/jobs/{job_id}/cancel"' in detail.text
+
+    cancel = c.post(f"/jobs/{job_id}/cancel", cookies={"owner_token": "owner_test"}, follow_redirects=False)
+    assert cancel.status_code == 303
+
+    job = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
+    assert job.json()["status"] == "cancelled"
+
+
+def test_job_logs_are_paginated():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Logs", "prompt": "Emit logs", "repo_alias": "default", "worker_name": "local"},
+    )
+    job_id = create.json()["id"]
+    for i in range(205):
+        c.post(
+            f"/api/worker/jobs/{job_id}/logs",
+            headers=worker_headers(),
+            json={"stream": "stdout", "content": f"log {i}"},
+        )
+
+    latest = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
+    body = latest.json()
+    assert len(body["logs"]) == 200
+    assert body["logs"][0]["content"] == "log 5"
+    assert body["older_logs_available"] is True
+
+    older = c.get(
+        f"/api/jobs/{job_id}?before_log_id={body['oldest_log_id']}",
+        headers=owner_headers(),
+    )
+    older_body = older.json()
+    assert len(older_body["logs"]) == 5
+    assert older_body["logs"][0]["content"] == "log 0"

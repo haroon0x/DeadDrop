@@ -10,6 +10,11 @@
     <div><dt>Completed</dt><dd>{{ job.completed_at or "not complete" }}</dd></div>
     <div><dt>Exit code</dt><dd>{{ job.exit_code if job.exit_code is not none else "n/a" }}</dd></div>
   </dl>
+  {% if job.status == "queued" %}
+  <form method="post" action="/jobs/{{ job.id }}/cancel" class="inline-action">
+    <button type="submit" class="secondary-button">Cancel queued job</button>
+  </form>
+  {% endif %}
   {% if job.final_summary %}<pre class="summary">{{ job.final_summary }}</pre>{% endif %}
   {% if job.git_diff %}<p class="muted">No commit was created. Review the diff before accepting changes locally.</p>{% endif %}
   {% if job.error_message %}<pre class="error-box">{{ job.error_message }}</pre>{% endif %}
@@ -17,6 +22,9 @@
 
 <section class="panel">
   <h2>Live logs</h2>
+  {% if job.older_logs_available %}
+  <p><a class="text-link" href="/jobs/{{ job.id }}?before_log_id={{ job.oldest_log_id }}">Load older logs</a></p>
+  {% endif %}
   <pre class="logs">{% for log in job.logs %}<span class="{{ log.stream }}">[{{ log.timestamp }}] {{ log.stream }}: {{ log.content }}</span>
 {% endfor %}</pre>
 </section>

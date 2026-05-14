@@ -36,7 +36,7 @@ Leave out for MVP:
 ### Server
 
 - FastAPI
-- SQLite for MVP
+- SQLAlchemy persistence: SQLite for local development, Supabase Postgres for production/demo through `DATABASE_URL`
 - Jinja2 templates and minimal CSS
 - Render-deployable
 - Token auth
@@ -164,4 +164,4 @@ Gemini mode should be supported and tested when model capacity is available. Gem
 
 ## Persistence Note
 
-SQLite is okay for MVP/local demo. Render free filesystem is not durable across restart/redeploy. Free future upgrades: Turso/libSQL for SQLite-like, Supabase/Neon for Postgres.
+SQLite is okay for quick local development only. Production/demo uses Supabase Postgres through `DATABASE_URL`. Render local filesystem persistence must not be used for durable app data.

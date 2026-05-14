@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,8 +35,8 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 		msg := fmt.Sprintf("job repo_alias %q is not in worker manifest", job.RepoAlias)
 		return finish(cfg, c, job.ID, 1, msg, msg)
 	}
-	if !isGitRepo(repo.Path) {
-		return finish(cfg, c, job.ID, 1, "configured repo is not a git repo", "configured repo is not a git repo")
+	if err := validateGitRepoRoot(repo.Path); err != nil {
+		return finish(cfg, c, job.ID, 1, err.Error(), err.Error())
 	}
 	c.Log(job.ID, "system", "Inspecting repo")
 	logCommand(repo.Path, c, job.ID, "git", "status", "--short")
@@ -81,10 +82,29 @@ func finish(cfg Config, c Client, jobID, code int, message, summary string) RunR
 	return RunResult{ExitCode: code, Summary: summary, Diff: "", Err: fmt.Errorf("%s", message)}
 }
 
-func isGitRepo(path string) bool {
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+func validateGitRepoRoot(path string) error {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	cmd.Dir = path
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("configured repo is not a git repo")
+	}
+	top, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+	if err != nil {
+		return fmt.Errorf("configured repo root is invalid: %w", err)
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("configured repo path is invalid: %w", err)
+	}
+	configured, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return fmt.Errorf("configured repo path is invalid: %w", err)
+	}
+	if top != configured {
+		return fmt.Errorf("configured repo path must be the git worktree root: %s", top)
+	}
+	return nil
 }
 
 func buildPrompt(repo, alias, task string) string {
@@ -174,8 +194,9 @@ func logCommand(dir string, c Client, jobID int, name string, args ...string) (C
 func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -197,7 +218,15 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 		output.WriteString(s + "\n")
 		outputMu.Unlock()
 	}, done)
-	err := cmd.Wait()
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	var err error
+	select {
+	case err = <-waitDone:
+	case <-ctx.Done():
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		err = <-waitDone
+	}
 	<-done
 	<-done
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
