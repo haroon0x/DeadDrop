@@ -183,6 +183,9 @@ deaddrop.db
 *.sqlite
 *.sqlite3
 
+# Local sandboxes
+examples/
+
 # OS specific
 .DS_Store
 Thumbs.db
