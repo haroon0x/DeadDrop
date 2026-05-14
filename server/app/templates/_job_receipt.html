@@ -1,0 +1,27 @@
+<section class="panel">
+  <h2>Receipt</h2>
+  <dl class="facts">
+    <div><dt>Status</dt><dd><span class="badge {{ job.status }}">{{ job.status }}</span></dd></div>
+    <div><dt>Worker</dt><dd>{{ job.worker_name }}</dd></div>
+    <div><dt>Repo</dt><dd>{{ job.repo_alias }}</dd></div>
+    <div><dt>Created</dt><dd>{{ job.created_at }}</dd></div>
+    <div><dt>Updated</dt><dd>{{ job.updated_at }}</dd></div>
+    <div><dt>Started</dt><dd>{{ job.started_at or "not started" }}</dd></div>
+    <div><dt>Completed</dt><dd>{{ job.completed_at or "not complete" }}</dd></div>
+    <div><dt>Exit code</dt><dd>{{ job.exit_code if job.exit_code is not none else "n/a" }}</dd></div>
+  </dl>
+  {% if job.final_summary %}<pre class="summary">{{ job.final_summary }}</pre>{% endif %}
+  {% if job.git_diff %}<p class="muted">No commit was created. Review the diff before accepting changes locally.</p>{% endif %}
+  {% if job.error_message %}<pre class="error-box">{{ job.error_message }}</pre>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Live logs</h2>
+  <pre class="logs">{% for log in job.logs %}<span class="{{ log.stream }}">[{{ log.timestamp }}] {{ log.stream }}: {{ log.content }}</span>
+{% endfor %}</pre>
+</section>
+
+<section class="panel">
+  <h2>Git diff</h2>
+  <pre class="diff">{{ job.git_diff or "No diff yet." }}</pre>
+</section>

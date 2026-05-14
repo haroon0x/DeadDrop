@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Drop a task{% endblock %}
+{% block content %}
+<section class="panel">
+  <p class="eyebrow">New job</p>
+  <h1>Drop a task</h1>
+  <form method="post" action="/jobs" class="stack">
+    <label>
+      Title
+      <input name="title" required placeholder="Fix failing demo test">
+    </label>
+    <label>
+      Task prompt
+      <textarea name="prompt" required rows="10" placeholder="Fix the failing test in the demo repo. Do not commit."></textarea>
+    </label>
+    <label>
+      Repo
+      {% if repos %}
+      <select name="repo_alias" id="repo-select" required>
+        {% for repo in repos %}
+        <option value="{{ repo.repo_alias }}" data-worker="{{ repo.worker_name }}">{{ repo.display_name }} / {{ repo.repo_alias }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="worker_name" id="worker-name" value="{{ repos[0].worker_name }}">
+      {% else %}
+      <input name="repo_alias" value="default" required>
+      <input type="hidden" name="worker_name" value="local">
+      {% endif %}
+    </label>
+    <button type="submit">Drop a task</button>
+  </form>
+</section>
+{% if repos %}
+<script>
+  const repoSelect = document.getElementById("repo-select");
+  const workerName = document.getElementById("worker-name");
+  function syncWorker() {
+    workerName.value = repoSelect.selectedOptions[0].dataset.worker || "local";
+  }
+  repoSelect.addEventListener("change", syncWorker);
+  syncWorker();
+</script>
+{% endif %}
+{% endblock %}

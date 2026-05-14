@@ -1,0 +1,9 @@
+{
+  "repos": [
+    {
+      "alias": "demo",
+      "name": "Demo repo",
+      "path": "../examples/demo-repo"
+    }
+  ]
+}

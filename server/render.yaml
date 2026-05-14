@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: deaddrop
+    env: python
+    rootDir: deaddrop/server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OWNER_TOKEN
+        sync: false
+      - key: WORKER_TOKEN
+        sync: false
+      - key: SQLITE_PATH
+        value: /var/data/deaddrop.db

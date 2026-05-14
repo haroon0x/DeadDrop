@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}DeadDrop Dashboard{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Local-first coding inbox</p>
+  <h1>Leave a coding task. Come back to the diff.</h1>
+  <a class="button" href="/jobs/new">Drop a task</a>
+</section>
+
+{% if jobs %}
+<section class="job-list">
+  {% for job in jobs %}
+  <a class="job-card" href="/jobs/{{ job.id }}">
+    <div>
+      <h2>{{ job.title }}</h2>
+      <p>{{ job.worker_name }} / {{ job.repo_alias }}</p>
+    </div>
+    <div class="meta">
+      <span class="badge {{ job.status }}">{{ job.status }}</span>
+      <span>{{ job.created_at }}</span>
+      <span>{{ job.updated_at }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty">
+  <p>No jobs yet. Drop a task from your phone and let your local worker pick it up.</p>
+</section>
+{% endif %}
+{% endblock %}

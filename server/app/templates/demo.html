@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}DeadDrop Demo{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Reviewer-safe demo</p>
+  <h1>Completed job without touching a real PC.</h1>
+</section>
+<section class="panel">
+  <h2>Receipt</h2>
+  <dl class="facts">
+    <div><dt>Status</dt><dd><span class="badge completed">completed</span></dd></div>
+    <div><dt>Worker</dt><dd>local</dd></div>
+    <div><dt>Repo</dt><dd>default</dd></div>
+  </dl>
+  <pre class="summary">Changed app.py so add(2, 3) returns 5. Ran pytest. Review diff before commit.</pre>
+</section>
+<section class="panel">
+  <h2>Live logs</h2>
+  <pre class="logs"><span class="system">[demo] system: Picked up job</span>
+<span class="stdout">[demo] stdout: pytest found failing test_add</span>
+<span class="system">[demo] system: Applied mock fix</span></pre>
+</section>
+<section class="panel">
+  <h2>Git diff</h2>
+  <pre class="diff">-    return a - b
++    return a + b</pre>
+</section>
+{% endblock %}

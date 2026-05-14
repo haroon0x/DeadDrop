@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeadDrop Login</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-panel">
+      <p class="eyebrow">DeadDrop</p>
+      <h1>Leave a coding task. Come back to the diff.</h1>
+      <form method="post" action="/login" class="stack">
+        <label>
+          Owner token
+          <input name="token" type="password" autocomplete="current-password" required>
+        </label>
+        {% if error %}<p class="error">{{ error }}</p>{% endif %}
+        <button type="submit">Enter</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
