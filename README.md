@@ -27,12 +27,10 @@ Start server with `uv`:
 
 ```bash
 cd server
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync
 export OWNER_TOKEN="$(openssl rand -base64 32)"
 export WORKER_TOKEN="$(openssl rand -base64 32)"
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 Open `http://localhost:8000/login`, enter your `OWNER_TOKEN`, and drop a task. The form asks for title, repo, and prompt. Worker routing stays internal.
@@ -168,8 +166,8 @@ MVP uses one internal worker named `local`. The server stores it only to route q
 Create a Web Service from this repo and set:
 
 - Root directory: `server`
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Build command: `uv sync --frozen`
+- Start command: `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Env vars: `OWNER_TOKEN`, `WORKER_TOKEN`, `DATABASE_URL`, `SECURE_COOKIES=true`
 
 For production/demo, set `DATABASE_URL` to the Supabase Postgres connection string. Do not rely on Render local filesystem persistence. Local development can use SQLite with `DATABASE_URL=sqlite:///./deaddrop.db`.
