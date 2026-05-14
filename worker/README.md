@@ -23,6 +23,8 @@ Default Gemini command:
 gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
 ```
 
+The built-in Gemini mode executes Gemini directly without a shell and redacts the prompt from live logs. `--command-template` still uses a shell for custom commands.
+
 Use `--agent-timeout 900` to control max agent runtime in seconds.
 
 Gemini should wrap its final answer with `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END`. Content inside those markers is free-form and can answer the user task directly. If Gemini emits the start marker but forgets the end marker, the worker keeps the output from the start marker as the receipt so simple tasks do not fail. If no receipt marker appears on a zero-exit run, the worker fails the job because DeadDrop needs a reliable receipt.

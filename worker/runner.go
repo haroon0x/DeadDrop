@@ -48,11 +48,11 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 	case "mock":
 		command, err = runMock(cfg, repo, c, job.ID)
 	case "gemini":
-		tmpl := cfg.CommandTemplate
-		if tmpl == "" {
-			tmpl = `gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"`
+		if cfg.CommandTemplate == "" {
+			command, err = runGemini(cfg, repo, c, job.ID, prompt)
+		} else {
+			command, err = runTemplate(cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
 		}
-		command, err = runTemplate(cfg, repo, c, job.ID, tmpl, prompt, job.Prompt)
 	case "custom":
 		if cfg.CommandTemplate == "" {
 			return finish(cfg, c, job.ID, 1, "--command-template is required for custom agent", "")
@@ -108,36 +108,38 @@ func validateGitRepoRoot(path string) error {
 }
 
 func buildPrompt(repo, alias, task string) string {
-	return fmt.Sprintf(`You are running inside DeadDrop, a local-first mission queue for coding agents.
+	return fmt.Sprintf(`# DeadDrop Worker Task
 
-Trusted local workspace repo:
-- repo_alias: %s
-- repo_path: %s
+You are Gemini CLI running inside one trusted local git workspace.
 
-User task:
+## Workspace
+- Repo alias: %s
+- Repo path: %s
+
+## User Task
 %s
 
-Rules:
-- Work only inside the current repository.
-- Do not commit changes.
-- Do not run git commit, git push, or destructive cleanup.
-- Prefer the smallest useful change.
-- Do not delete unrelated files.
-- If you need to run tests, run the smallest relevant test first.
-- If the task is a question or asks you to inspect files, answer it directly; code edits are not required.
-- If the task asks for specific lines or content, provide exactly the requested information.
-- If the task is ambiguous, make the safest minimal change or explain what is missing.
-- The human will review the diff and can accept or reject later.
-- Keep final answer concise and operational.
+## Operating Rules
+1. Work only inside current repository.
+2. Do not commit, push, reset, or delete unrelated files.
+3. For inspection/question tasks, answer directly; code edits are not required.
+4. For change tasks, make smallest useful change and run smallest relevant verification.
+5. If blocked or ambiguous, explain blocker and what you checked.
+6. Human reviews diff later, so keep receipt concise and operational.
 
-Your final answer can be any format that best satisfies the user task. The only required protocol is:
-- Wrap your final answer exactly once between DEADDROP_RECEIPT and DEADDROP_RECEIPT_END.
-- Do not print DEADDROP_RECEIPT until you are ready to give the final answer.
-- If blocked, put the blocker and any useful findings inside the receipt.
+## Required Final Output
+At very end, print exactly this structure:
 
+START LINE:
 DEADDROP_RECEIPT
-<your final answer, audit, findings, or requested information>
+
+THEN:
+Short result, changed files if any, verification run if any, blockers if any.
+
+END LINE:
 DEADDROP_RECEIPT_END
+
+Do not print DEADDROP_RECEIPT until final answer.
 `, alias, repo, task)
 }
 
@@ -184,6 +186,15 @@ func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt,
 		return CommandResult{ExitCode: 0, Output: "Dry run: command not executed"}, nil
 	}
 	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "sh", "-c", command)
+}
+
+func runGemini(cfg Config, repo RepoConfig, c Client, jobID int, prompt string) (CommandResult, error) {
+	args := []string{"--skip-trust", "--approval-mode", "yolo", "--output-format", "text", "-p", prompt}
+	c.Log(jobID, "system", "Running agent command: gemini --skip-trust --approval-mode yolo --output-format text -p <prompt redacted>")
+	if cfg.DryRun {
+		return CommandResult{ExitCode: 0, Output: "Dry run: gemini not executed"}, nil
+	}
+	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "gemini", args...)
 }
 
 func redactedCommandForLog(tmpl string, repo RepoConfig) string {
@@ -284,7 +295,13 @@ func buildSummary(agent, alias string, exitCode int, output string) (string, boo
 	receipt := extractReceipt(output)
 	hasReceipt := receipt != ""
 	if receipt == "" {
-		receipt = "Agent output tail:\n" + tail(output, 3000)
+		body := tail(output, 3000)
+		if strings.TrimSpace(body) != "" && exitCode == 0 {
+			receipt = "DEADDROP_RECEIPT\n" + body + "\nDEADDROP_RECEIPT_END"
+			hasReceipt = true
+		} else {
+			receipt = "Agent output tail:\n" + body
+		}
 	}
 	return fmt.Sprintf("%s\n\nWorker receipt:\nAgent mode: %s\nRepo alias: %s\nExit code: %d\nNo commit was created by DeadDrop. Review git diff before accepting changes locally.", receipt, agent, alias, exitCode), hasReceipt
 }

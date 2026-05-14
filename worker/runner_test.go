@@ -26,10 +26,20 @@ func TestExtractReceiptAcceptsMissingEndMarker(t *testing.T) {
 	}
 }
 
-func TestBuildSummaryReportsMissingReceipt(t *testing.T) {
-	_, ok := buildSummary("custom", "demo", 0, "plain output")
+func TestBuildSummaryWrapsZeroExitOutputWhenReceiptMissing(t *testing.T) {
+	summary, ok := buildSummary("custom", "demo", 0, "plain output")
+	if !ok {
+		t.Fatal("expected zero-exit output to become receipt")
+	}
+	if !strings.Contains(summary, "DEADDROP_RECEIPT\nplain output\nDEADDROP_RECEIPT_END") {
+		t.Fatalf("expected synthetic receipt, got %q", summary)
+	}
+}
+
+func TestBuildSummaryReportsMissingReceiptOnNonZeroExit(t *testing.T) {
+	_, ok := buildSummary("custom", "demo", 1, "plain output")
 	if ok {
-		t.Fatal("expected missing receipt")
+		t.Fatal("expected non-zero output without receipt to remain invalid")
 	}
 }
 

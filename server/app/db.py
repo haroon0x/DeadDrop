@@ -206,7 +206,7 @@ def claim_next_job(conn: Connection, worker_name: str, ts: str) -> dict[str, Any
         .where(jobs.c.id == job_id, jobs.c.status == "queued")
         .values(status="running", started_at=ts, updated_at=ts)
     )
-    return get_job(conn, job_id, include_logs=True)
+    return get_job(conn, job_id, include_logs=False)
 
 
 def touch_worker(conn: Connection, name: str) -> None:
