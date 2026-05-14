@@ -151,6 +151,7 @@ def test_structured_receipt_renders_as_sections():
     assert "Verification" in page.text
     assert "3 passed" in page.text
     assert "<summary>Live logs</summary>" in page.text
+    assert "<summary>Git diff</summary>" in page.text
 
 
 def test_browser_auth_uses_persistent_cookie_not_query_token():

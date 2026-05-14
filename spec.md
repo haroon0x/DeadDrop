@@ -118,7 +118,7 @@ DeadDrop itself captures diff after Gemini exits.
 Default Gemini command:
 
 ```bash
-gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
+gemini --skip-trust --approval-mode yolo --output-format json -p "{{prompt}}"
 ```
 
 The prompt requires a final receipt between `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END`. Worker extracts and validates that block into `receipt_json` plus a concise `final_summary`. If Gemini exits 0 but omits markers, worker marks the job failed because the dashboard would otherwise have no reliable receipt.

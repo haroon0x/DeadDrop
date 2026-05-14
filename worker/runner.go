@@ -30,6 +30,12 @@ type CommandResult struct {
 	Output   string
 }
 
+type GeminiJSONOutput struct {
+	Response string          `json:"response"`
+	Stats    json.RawMessage `json:"stats"`
+	Error    json.RawMessage `json:"error"`
+}
+
 func runJob(cfg Config, c Client, job Job) RunResult {
 	c.Log(job.ID, "system", "Picked up job")
 	repo, ok := cfg.Repos[job.RepoAlias]
@@ -67,9 +73,19 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 	diff := captureGitDiff(repo.Path)
 	status := captureGitStatus(repo.Path)
 	c.Log(job.ID, "system", "Final git status:\n"+status)
-	summary, receiptJSON, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, command.Output)
+	receiptSource := command.Output
+	if cfg.Agent == "gemini" && cfg.CommandTemplate == "" {
+		var parseErr error
+		receiptSource, parseErr = geminiResponseText(command.Output)
+		if parseErr != nil && err == nil {
+			err = parseErr
+			command.ExitCode = 2
+			c.Log(job.ID, "system", parseErr.Error())
+		}
+	}
+	summary, receiptJSON, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, receiptSource)
 	if !hasReceipt && err == nil {
-		err = fmt.Errorf("agent completed but did not emit DeadDrop receipt markers")
+		err = fmt.Errorf("agent command exited 0, but final structured receipt JSON was missing or invalid")
 		command.ExitCode = 2
 		c.Log(job.ID, "system", err.Error())
 	}
@@ -201,12 +217,26 @@ func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt,
 }
 
 func runGemini(cfg Config, repo RepoConfig, c Client, jobID int, prompt string) (CommandResult, error) {
-	args := []string{"--skip-trust", "--approval-mode", "yolo", "--output-format", "text", "-p", prompt}
-	c.Log(jobID, "system", "Running agent command: gemini --skip-trust --approval-mode yolo --output-format text -p <prompt redacted>")
+	args := []string{"--skip-trust", "--approval-mode", "yolo", "--output-format", "json", "-p", prompt}
+	c.Log(jobID, "system", "Running agent command: gemini --skip-trust --approval-mode yolo --output-format json -p <prompt redacted>")
 	if cfg.DryRun {
 		return CommandResult{ExitCode: 0, Output: "Dry run: gemini not executed"}, nil
 	}
 	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "gemini", args...)
+}
+
+func geminiResponseText(output string) (string, error) {
+	var parsed GeminiJSONOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &parsed); err != nil {
+		return output, fmt.Errorf("gemini returned non-JSON output despite --output-format json: %w", err)
+	}
+	if len(parsed.Error) > 0 && string(parsed.Error) != "null" {
+		return parsed.Response, fmt.Errorf("gemini returned error: %s", string(parsed.Error))
+	}
+	if strings.TrimSpace(parsed.Response) == "" {
+		return parsed.Response, fmt.Errorf("gemini JSON response was empty")
+	}
+	return parsed.Response, nil
 }
 
 func redactedCommandForLog(tmpl string, repo RepoConfig) string {
@@ -218,6 +248,7 @@ func redactedCommandForLog(tmpl string, repo RepoConfig) string {
 
 func logCommand(dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
 	c.Log(jobID, "system", "Running in "+dir+": "+name+" "+strings.Join(args, " "))
+	logLocal("job id=%d running in %s: %s %s", jobID, dir, name, strings.Join(args, " "))
 	return streamCommand(2*time.Minute, dir, c, jobID, name, args...)
 }
 
@@ -240,12 +271,14 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 	done := make(chan struct{}, 2)
 	go scanPipe(stdout, func(s string) {
 		c.Log(jobID, "stdout", s)
+		logLocal("job id=%d stdout: %s", jobID, s)
 		outputMu.Lock()
 		output.WriteString(s + "\n")
 		outputMu.Unlock()
 	}, done)
 	go scanPipe(stderr, func(s string) {
 		c.Log(jobID, "stderr", s)
+		logLocal("job id=%d stderr: %s", jobID, s)
 		outputMu.Lock()
 		output.WriteString(s + "\n")
 		outputMu.Unlock()
@@ -266,17 +299,21 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 		msg := fmt.Sprintf("command timed out after %s", timeout)
 		c.Log(jobID, "stderr", msg)
 		c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 124 after %s", elapsed))
+		logLocal("job id=%d command finished: exit code 124 after %s", jobID, elapsed)
 		return CommandResult{ExitCode: 124, Output: output.String()}, fmt.Errorf("%s", msg)
 	}
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
 			c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code %d after %s", exit.ExitCode(), elapsed))
+			logLocal("job id=%d command finished: exit code %d after %s", jobID, exit.ExitCode(), elapsed)
 			return CommandResult{ExitCode: exit.ExitCode(), Output: output.String()}, err
 		}
 		c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 1 after %s", elapsed))
+		logLocal("job id=%d command finished: exit code 1 after %s", jobID, elapsed)
 		return CommandResult{ExitCode: 1, Output: output.String()}, err
 	}
 	c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 0 after %s", elapsed))
+	logLocal("job id=%d command finished: exit code 0 after %s", jobID, elapsed)
 	return CommandResult{ExitCode: 0, Output: output.String()}, nil
 }
 

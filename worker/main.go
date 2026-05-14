@@ -16,15 +16,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+	logLocal("starting worker server=%s worker=%s agent=%s poll=%s run_once=%t", cfg.Server, cfg.Worker, cfg.Agent, cfg.PollInterval, cfg.RunOnce)
+	for alias, repo := range cfg.Repos {
+		logLocal("workspace alias=%s path=%s", alias, repo.Path)
+	}
 	client := NewClient(cfg.Server, cfg.Token)
+	logLocal("registering workspace aliases")
 	if err := registerRepos(cfg, client); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	logLocal("registered; waiting for jobs")
 	for {
 		job, err := client.Next(cfg.Worker)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			logLocal("worker API error: %v", err)
 			if cfg.RunOnce {
 				os.Exit(1)
 			}
@@ -38,7 +44,9 @@ func main() {
 			time.Sleep(cfg.PollInterval)
 			continue
 		}
+		logLocal("claimed job id=%d title=%q repo_alias=%s", job.ID, job.Title, job.RepoAlias)
 		code := handleJob(cfg, client, *job)
+		logLocal("job id=%d finished with worker exit code %d", job.ID, code)
 		if cfg.RunOnce {
 			os.Exit(code)
 		}
@@ -46,12 +54,14 @@ func main() {
 }
 
 func handleJob(cfg Config, client Client, job Job) int {
+	logLocal("running job id=%d", job.ID)
 	result := runJob(cfg, client, job)
 	if result.Err != nil || result.ExitCode != 0 {
 		msg := ""
 		if result.Err != nil {
 			msg = result.Err.Error()
 		}
+		logLocal("reporting failed job id=%d exit_code=%d error=%q", job.ID, result.ExitCode, msg)
 		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -61,11 +71,16 @@ func handleJob(cfg Config, client Client, job Job) int {
 		}
 		return 1
 	}
+	logLocal("reporting completed job id=%d exit_code=%d", job.ID, result.ExitCode)
 	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
+}
+
+func logLocal(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "[%s] "+format+"\n", append([]any{time.Now().Format(time.RFC3339)}, args...)...)
 }
 
 func registerRepos(cfg Config, client Client) error {

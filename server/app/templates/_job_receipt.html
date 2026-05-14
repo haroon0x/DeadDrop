@@ -83,6 +83,8 @@
 </section>
 
 <section class="panel">
-  <h2>Git diff</h2>
+  <details class="log-details" {% if job.git_diff and job.status != "running" %}open{% endif %}>
+  <summary>Git diff</summary>
   <pre class="diff">{{ job.git_diff or "No diff yet." }}</pre>
+  </details>
 </section>

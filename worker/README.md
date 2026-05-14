@@ -20,7 +20,7 @@ Each configured path can be any existing directory. Gemini runs with that direct
 Default Gemini command:
 
 ```bash
-gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
+gemini --skip-trust --approval-mode yolo --output-format json -p "{{prompt}}"
 ```
 
 The built-in Gemini mode executes Gemini directly without a shell and redacts the prompt from live logs. `--command-template` still uses a shell for custom commands.

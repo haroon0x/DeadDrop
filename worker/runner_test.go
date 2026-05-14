@@ -79,6 +79,24 @@ DEADDROP_RECEIPT_JSON_END`
 	}
 }
 
+func TestGeminiResponseTextExtractsResponseFromJSONOutput(t *testing.T) {
+	output := `{"response":"DEADDROP_RECEIPT_JSON\n{\"status\":\"completed\",\"summary\":\"ok\",\"changed_files\":[],\"verification\":[],\"blockers\":[],\"notes\":\"\"}\nDEADDROP_RECEIPT_JSON_END","stats":{"latency":123}}`
+	response, err := geminiResponseText(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(response, "DEADDROP_RECEIPT_JSON") || !strings.Contains(response, `"summary":"ok"`) {
+		t.Fatalf("expected response text, got %q", response)
+	}
+}
+
+func TestGeminiResponseTextReportsCLIError(t *testing.T) {
+	_, err := geminiResponseText(`{"response":"","error":{"message":"bad key"}}`)
+	if err == nil || !strings.Contains(err.Error(), "gemini returned error") {
+		t.Fatalf("expected gemini error, got %v", err)
+	}
+}
+
 func TestMockReceiptReportsWhetherCodeChanged(t *testing.T) {
 	changed := mockReceipt(true)
 	if !strings.Contains(changed, "Changed app.py") {
