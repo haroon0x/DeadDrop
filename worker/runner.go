@@ -113,36 +113,39 @@ func validateWorkspace(path string) error {
 }
 
 func buildPrompt(repo, alias, task string) string {
-	return fmt.Sprintf(`# DeadDrop Worker Task
+	return fmt.Sprintf(`# DeadDrop Agent Task
 
-You are Gemini CLI running inside one trusted local workspace directory.
+You are the coding agent for DeadDrop. You are running in a local terminal with the workspace directory as your current working directory. Complete the user's task, then return one structured receipt.
 
 ## Workspace
 - Repo alias: %s
-- Repo path: %s
+- Workspace path: %s
 
 ## User Task
 %s
 
-## Operating Rules
-1. Work only inside current workspace directory.
-2. Do not commit, push, reset, or delete unrelated files.
-3. For inspection/question tasks, answer directly; code edits are not required.
-4. For change tasks, make smallest useful change and run smallest relevant verification.
-5. If blocked or ambiguous, explain blocker and what you checked.
-6. Human reviews git diff later if workspace is in a git repo, so keep receipt concise and operational.
+## Work Rules
+1. Stay inside the current workspace. Do not read or edit files outside it unless the user explicitly asks and it is necessary.
+2. Do not run git commit, git push, destructive resets, or broad delete commands.
+3. If the task is a question or inspection request, answer it directly. Do not edit files unless the user asked for edits.
+4. If the task asks for changes, make the smallest useful change and preserve existing style.
+5. Run focused verification when practical. Prefer project-local tests, type checks, linters, or a direct command that proves the change.
+6. If verification is not possible, say why in the receipt and set verification status to not_run.
+7. If blocked by missing files, missing credentials, unclear instructions, or unsafe scope, stop and report blockers. Do not invent success.
+8. Keep terminal output useful: run commands normally so stdout/stderr can stream to DeadDrop logs.
+9. Human reviews any captured diff later, so do not include huge logs or full diffs in the receipt.
 
 ## Required Final Output
-At very end, print exactly this structure and nothing after it:
+At the very end, print exactly this structure and nothing after it:
 
 START LINE:
 DEADDROP_RECEIPT_JSON
 
 THEN:
-A single valid JSON object matching this schema:
+A single valid JSON object, no markdown fences, matching this schema:
 {
   "status": "completed" | "failed" | "blocked",
-  "summary": "One short plain-English result.",
+  "summary": "One concise plain-English result or answer.",
   "changed_files": ["relative/path.ext"],
   "verification": [
     {"command": "pytest", "status": "passed" | "failed" | "not_run", "summary": "short outcome"}
@@ -157,6 +160,9 @@ DEADDROP_RECEIPT_JSON_END
 Rules:
 - Output JSON only between markers.
 - Use [] for no changed files, no verification, or no blockers.
+- Use workspace-relative paths in changed_files.
+- If command output matters, summarize it in verification or notes; raw output is already in DeadDrop logs.
+- If status is "completed", summary must state what was completed or answered.
 - Do not print DEADDROP_RECEIPT_JSON until final answer.
 `, alias, repo, task)
 }
@@ -222,12 +228,13 @@ func runGemini(cfg Config, repo RepoConfig, c Client, jobID int, prompt string) 
 	if cfg.DryRun {
 		return CommandResult{ExitCode: 0, Output: "Dry run: gemini not executed"}, nil
 	}
-	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "gemini", args...)
+	return streamCommandWithOptions(cfg.AgentTimeout, repo.Path, c, jobID, false, true, "gemini", args...)
 }
 
 func geminiResponseText(output string) (string, error) {
 	var parsed GeminiJSONOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &parsed); err != nil {
+	jsonBody := extractTrailingJSONObject(output)
+	if err := json.Unmarshal([]byte(jsonBody), &parsed); err != nil {
 		return output, fmt.Errorf("gemini returned non-JSON output despite --output-format json: %w", err)
 	}
 	if len(parsed.Error) > 0 && string(parsed.Error) != "null" {
@@ -237,6 +244,23 @@ func geminiResponseText(output string) (string, error) {
 		return parsed.Response, fmt.Errorf("gemini JSON response was empty")
 	}
 	return parsed.Response, nil
+}
+
+func extractTrailingJSONObject(output string) string {
+	body := strings.TrimSpace(output)
+	if json.Valid([]byte(body)) {
+		return body
+	}
+	start := strings.LastIndex(body, "\n{")
+	if start == -1 {
+		start = strings.Index(body, "{")
+	} else {
+		start++
+	}
+	if start == -1 {
+		return body
+	}
+	return strings.TrimSpace(body[start:])
 }
 
 func redactedCommandForLog(tmpl string, repo RepoConfig) string {
@@ -253,6 +277,10 @@ func logCommand(dir string, c Client, jobID int, name string, args ...string) (C
 }
 
 func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
+	return streamCommandWithOptions(timeout, dir, c, jobID, true, false, name, args...)
+}
+
+func streamCommandWithOptions(timeout time.Duration, dir string, c Client, jobID int, logStdout, filterGeminiNoise bool, name string, args ...string) (CommandResult, error) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -270,13 +298,21 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 	var outputMu sync.Mutex
 	done := make(chan struct{}, 2)
 	go scanPipe(stdout, func(s string) {
-		c.Log(jobID, "stdout", s)
-		logLocal("job id=%d stdout: %s", jobID, s)
+		if logStdout {
+			c.Log(jobID, "stdout", s)
+			logLocal("job id=%d stdout: %s", jobID, s)
+		}
 		outputMu.Lock()
 		output.WriteString(s + "\n")
 		outputMu.Unlock()
 	}, done)
 	go scanPipe(stderr, func(s string) {
+		if filterGeminiNoise && isGeminiStartupNoise(s) {
+			outputMu.Lock()
+			output.WriteString(s + "\n")
+			outputMu.Unlock()
+			return
+		}
 		c.Log(jobID, "stderr", s)
 		logLocal("job id=%d stderr: %s", jobID, s)
 		outputMu.Lock()
@@ -312,9 +348,21 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 		logLocal("job id=%d command finished: exit code 1 after %s", jobID, elapsed)
 		return CommandResult{ExitCode: 1, Output: output.String()}, err
 	}
+	if !logStdout && strings.TrimSpace(output.String()) != "" {
+		c.Log(jobID, "system", "Command stdout captured for structured parsing")
+		logLocal("job id=%d stdout captured for structured parsing (%d bytes)", jobID, output.Len())
+	}
 	c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 0 after %s", elapsed))
 	logLocal("job id=%d command finished: exit code 0 after %s", jobID, elapsed)
 	return CommandResult{ExitCode: 0, Output: output.String()}, nil
+}
+
+func isGeminiStartupNoise(line string) bool {
+	return strings.Contains(line, "[ExtensionManager] Error loading agent from") ||
+		strings.Contains(line, "(Local Agent) tools: Expected array, received string") ||
+		strings.Contains(line, "Configuration file not found at /home/g/.gemini/extensions/") ||
+		strings.Contains(line, "YOLO mode is enabled. All tool calls will be automatically approved.") ||
+		strings.Contains(line, "Ripgrep is not available. Falling back to GrepTool.")
 }
 
 func scanPipe(pipe any, log func(string), done chan<- struct{}) {
@@ -394,6 +442,13 @@ func buildSummary(agent, alias string, exitCode int, output string) (string, str
 		}
 		return fmt.Sprintf("Invalid structured receipt JSON.\n\nAgent output tail:\n%s", tail(output, 3000)), "", false
 	}
+	if receiptJSON, receipt, ok := extractBareReceiptJSON(output); ok {
+		summary := receipt.Summary
+		if strings.TrimSpace(summary) == "" {
+			summary = "Agent returned a structured receipt."
+		}
+		return fmt.Sprintf("%s\n\nWorker receipt:\nAgent mode: %s\nRepo alias: %s\nExit code: %d\nNo commit was created by DeadDrop. Review git diff before accepting changes locally.", summary, agent, alias, exitCode), receiptJSON, true
+	}
 	receipt := extractReceipt(output)
 	hasReceipt := receipt != ""
 	if receipt == "" {
@@ -405,7 +460,7 @@ func buildSummary(agent, alias string, exitCode int, output string) (string, str
 
 func extractReceiptJSON(output string) (string, Receipt, bool) {
 	var receipt Receipt
-	start := strings.Index(output, "DEADDROP_RECEIPT_JSON\n")
+	start := strings.LastIndex(output, "DEADDROP_RECEIPT_JSON\n")
 	end := strings.LastIndex(output, "DEADDROP_RECEIPT_JSON_END")
 	if start == -1 || end == -1 || end <= start {
 		return "", receipt, false
@@ -414,7 +469,27 @@ func extractReceiptJSON(output string) (string, Receipt, bool) {
 	if body == "" {
 		return "", receipt, false
 	}
+	return normalizeReceiptJSON(body)
+}
+
+func extractBareReceiptJSON(output string) (string, Receipt, bool) {
+	body := strings.TrimSpace(output)
+	if strings.HasPrefix(body, "```") {
+		lines := strings.Split(body, "\n")
+		if len(lines) >= 3 {
+			body = strings.Join(lines[1:len(lines)-1], "\n")
+			body = strings.TrimSpace(body)
+		}
+	}
+	return normalizeReceiptJSON(body)
+}
+
+func normalizeReceiptJSON(body string) (string, Receipt, bool) {
+	var receipt Receipt
 	if err := json.Unmarshal([]byte(body), &receipt); err != nil {
+		return "", receipt, false
+	}
+	if strings.TrimSpace(receipt.Summary) == "" && len(receipt.ChangedFiles) == 0 && len(receipt.Verification) == 0 && len(receipt.Blockers) == 0 && strings.TrimSpace(receipt.Notes) == "" {
 		return "", receipt, false
 	}
 	if strings.TrimSpace(receipt.Status) == "" {

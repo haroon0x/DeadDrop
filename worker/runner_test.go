@@ -63,6 +63,71 @@ DEADDROP_RECEIPT_JSON_END`
 	}
 }
 
+func TestBuildSummaryUsesLastStructuredReceiptJSON(t *testing.T) {
+	output := `START LINE:
+DEADDROP_RECEIPT_JSON
+
+THEN:
+A single valid JSON object
+
+END LINE:
+DEADDROP_RECEIPT_JSON_END
+
+real final answer
+DEADDROP_RECEIPT_JSON
+{
+  "status": "completed",
+  "summary": "Identified multiple hardcoded values and fixed tests.",
+  "changed_files": [
+    "memanto/app/services/session_service.py",
+    "tests/test_api.py",
+    "tests/test_unit.py"
+  ],
+  "verification": [
+    {
+      "command": "pytest tests/test_unit.py",
+      "status": "passed",
+      "summary": "14 unit tests passed."
+    }
+  ],
+  "blockers": [],
+  "notes": "No commit was created."
+}
+DEADDROP_RECEIPT_JSON_END`
+	summary, receiptJSON, ok := buildSummary("gemini", "default", 0, output)
+	if !ok {
+		t.Fatal("expected final structured receipt")
+	}
+	if !strings.Contains(summary, "Identified multiple hardcoded values") {
+		t.Fatalf("expected final receipt summary, got %q", summary)
+	}
+	if !strings.Contains(receiptJSON, `"memanto/app/services/session_service.py"`) {
+		t.Fatalf("expected normalized final receipt json, got %q", receiptJSON)
+	}
+}
+
+func TestBuildSummaryAcceptsBareReceiptJSON(t *testing.T) {
+	output := `{"status":"completed","summary":"Answered question","changed_files":[],"verification":[],"blockers":[],"notes":"No files changed."}`
+	summary, receiptJSON, ok := buildSummary("gemini", "default", 0, output)
+	if !ok {
+		t.Fatal("expected bare structured receipt")
+	}
+	if !strings.Contains(summary, "Answered question") {
+		t.Fatalf("expected summary text, got %q", summary)
+	}
+	if !strings.Contains(receiptJSON, `"summary":"Answered question"`) {
+		t.Fatalf("expected normalized receipt json, got %q", receiptJSON)
+	}
+}
+
+func TestBuildSummaryAcceptsFencedBareReceiptJSON(t *testing.T) {
+	output := "```json\n{\"status\":\"completed\",\"summary\":\"Done\",\"changed_files\":[],\"verification\":[],\"blockers\":[],\"notes\":\"\"}\n```"
+	_, _, ok := buildSummary("gemini", "default", 0, output)
+	if !ok {
+		t.Fatal("expected fenced receipt json")
+	}
+}
+
 func TestBuildSummaryRejectsInvalidStructuredReceiptJSON(t *testing.T) {
 	output := `DEADDROP_RECEIPT_JSON
 {"status":
@@ -87,6 +152,17 @@ func TestGeminiResponseTextExtractsResponseFromJSONOutput(t *testing.T) {
 	}
 	if !strings.Contains(response, "DEADDROP_RECEIPT_JSON") || !strings.Contains(response, `"summary":"ok"`) {
 		t.Fatalf("expected response text, got %q", response)
+	}
+}
+
+func TestGeminiResponseTextIgnoresWarningsBeforeJSONOutput(t *testing.T) {
+	output := "Warning: noisy extension warning\n[WARN] another warning\n{\"response\":\"ok\",\"stats\":{\"tokens\":1}}"
+	response, err := geminiResponseText(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response != "ok" {
+		t.Fatalf("expected ok, got %q", response)
 	}
 }
 
