@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: server
     buildCommand: uv sync --frozen
-    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: unset VIRTUAL_ENV && uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: OWNER_TOKEN
         sync: false
