@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from secrets import compare_digest
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -85,7 +86,7 @@ def login_page(request: Request):
 def login(request: Request, token: str = Form(...)):
     from .auth import owner_token
 
-    if token != owner_token():
+    if not compare_digest(token, owner_token()):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid token"}, status_code=401)
     response = RedirectResponse("/", status_code=303)
     # 1. Set Owner Token
@@ -113,6 +114,7 @@ def login(request: Request, token: str = Form(...)):
 def logout():
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie("owner_token", secure=secure_cookies(), samesite="lax")
+    response.delete_cookie("csrf_token", secure=secure_cookies(), samesite="lax")
     return response
 
 
@@ -271,8 +273,11 @@ def append_log(job_id: int, log: LogCreate):
         raise HTTPException(status_code=422, detail="stream must be stdout, stderr, or system")
     ts = now_iso()
     with connect() as conn:
-        if not get_job(conn, job_id):
+        job = get_job(conn, job_id)
+        if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        if job["status"] not in {models.QUEUED, models.RUNNING}:
+            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
         conn.execute(
             insert(job_logs).values(job_id=job_id, timestamp=ts, stream=log.stream, content=log.content)
         )
@@ -284,8 +289,11 @@ def append_log(job_id: int, log: LogCreate):
 def complete_job(job_id: int, body: CompleteJob):
     ts = now_iso()
     with connect() as conn:
-        if not get_job(conn, job_id):
+        job = get_job(conn, job_id)
+        if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        if job["status"] != models.RUNNING:
+            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
         conn.execute(
             update(jobs)
             .where(jobs.c.id == job_id)
@@ -299,6 +307,14 @@ def complete_job(job_id: int, body: CompleteJob):
                 completed_at=ts,
             )
         )
+        conn.execute(
+            insert(job_logs).values(
+                job_id=job_id,
+                timestamp=ts,
+                stream="system",
+                content="Server accepted completed result",
+            )
+        )
         return {"ok": True, "id": job_id, "status": models.COMPLETED}
 
 
@@ -306,8 +322,11 @@ def complete_job(job_id: int, body: CompleteJob):
 def fail_job(job_id: int, body: FailJob):
     ts = now_iso()
     with connect() as conn:
-        if not get_job(conn, job_id):
+        job = get_job(conn, job_id)
+        if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        if job["status"] != models.RUNNING:
+            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
         conn.execute(
             update(jobs)
             .where(jobs.c.id == job_id)
@@ -320,6 +339,14 @@ def fail_job(job_id: int, body: FailJob):
                 git_diff=body.git_diff,
                 updated_at=ts,
                 completed_at=ts,
+            )
+        )
+        conn.execute(
+            insert(job_logs).values(
+                job_id=job_id,
+                timestamp=ts,
+                stream="system",
+                content="Server accepted failed result",
             )
         )
         return {"ok": True, "id": job_id, "status": models.FAILED}

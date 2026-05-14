@@ -67,7 +67,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		client.Log(job.ID, "system", "Server accepted failed result")
+		logLocal("server accepted failed result for job id=%d", job.ID)
 		if result.ExitCode != 0 {
 			return result.ExitCode
 		}
@@ -79,7 +79,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	client.Log(job.ID, "system", "Server accepted completed result")
+	logLocal("server accepted completed result for job id=%d", job.ID)
 	return 0
 }
 

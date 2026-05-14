@@ -128,6 +128,9 @@ def test_structured_receipt_renders_as_sections():
         json={"title": "Receipt", "prompt": "Return structured receipt"},
     )
     job_id = create.json()["id"]
+    next_job = c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    assert next_job.status_code == 200
+    assert next_job.json()["id"] == job_id
     receipt_json = (
         '{"status":"completed","summary":"Fixed the parser.",'
         '"changed_files":["parser.py"],'
@@ -152,6 +155,7 @@ def test_structured_receipt_renders_as_sections():
     assert "3 passed" in page.text
     assert "<summary>Live logs</summary>" in page.text
     assert "<summary>Git diff</summary>" in page.text
+    assert "Server accepted completed result" in page.text
 
 
 def test_browser_auth_uses_persistent_cookie_not_query_token():
@@ -230,3 +234,51 @@ def test_job_logs_are_paginated():
     older_body = older.json()
     assert len(older_body["logs"]) == 5
     assert older_body["logs"][0]["content"] == "log 0"
+
+
+def test_worker_cannot_overwrite_terminal_job_state():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Terminal", "prompt": "No-op"},
+    )
+    job_id = create.json()["id"]
+    c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    complete = c.post(
+        f"/api/worker/jobs/{job_id}/complete",
+        headers=worker_headers(),
+        json={"exit_code": 0, "final_summary": "Done"},
+    )
+    assert complete.status_code == 200
+
+    overwrite = c.post(
+        f"/api/worker/jobs/{job_id}/fail",
+        headers=worker_headers(),
+        json={"exit_code": 1, "error_message": "overwrite"},
+    )
+    assert overwrite.status_code == 409
+    late_log = c.post(
+        f"/api/worker/jobs/{job_id}/logs",
+        headers=worker_headers(),
+        json={"stream": "system", "content": "late"},
+    )
+    assert late_log.status_code == 409
+    fetched = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
+    assert fetched.json()["status"] == "completed"
+
+
+def test_large_worker_payloads_are_rejected():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Large", "prompt": "No-op"},
+    )
+    job_id = create.json()["id"]
+    too_large_log = c.post(
+        f"/api/worker/jobs/{job_id}/logs",
+        headers=worker_headers(),
+        json={"stream": "system", "content": "x" * 20001},
+    )
+    assert too_large_log.status_code == 422
