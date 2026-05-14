@@ -1,6 +1,37 @@
-# DeadDrop
+<p align="center">
+  
+</p>
+
+<h1 align="center">DeadDrop</h1>
+
+<p align="center">
+  Your local coding agent, reachable from anywhere.
+</p>
+
+<p align="center">
+  <a href="https://deaddrop-dpk8.onrender.com/">Demo</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#quickstart">Quickstart</a>
+  ·
+  <a href="#how-it-works">How it works</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/local--first-agent_queue-BBFF00?style=for-the-badge&labelColor=101010" />
+  <img src="https://img.shields.io/badge/phone_to_repo-ready-BBFF00?style=for-the-badge&labelColor=101010" />
+  <img src="https://img.shields.io/badge/diff-ready-BBFF00?style=for-the-badge&labelColor=101010" />
+</p>
+<img width="1916" height="821" alt="image" src="https://github.com/user-attachments/assets/4e52f0cf-c971-4fb2-b277-5f3af4b6472e" />
+
 
 DeadDrop is a local-first coding task inbox. Leave a coding task from your phone or browser, then a worker running on your PC picks it up, runs your local coding agent inside the configured repo, and sends back logs, status, summary, and git diff.
+
+### DEMO
+
+https://github.com/user-attachments/assets/7d771eeb-e6fe-436a-b7bf-0814b9b408a2
+
 
 Tagline: **Leave a coding task. Come back to the diff.**
 
