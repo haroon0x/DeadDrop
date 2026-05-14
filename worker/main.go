@@ -52,7 +52,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 		if result.Err != nil {
 			msg = result.Err.Error()
 		}
-		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.Diff); err != nil {
+		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -61,7 +61,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 		}
 		return 1
 	}
-	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.Diff); err != nil {
+	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

@@ -59,7 +59,7 @@ The worker must:
 - Enforce `--agent-timeout`.
 - Kill the spawned process group on timeout.
 - Capture scoped `git diff -- .` after agent exit when workspace is inside a git worktree.
-- Require `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END` when agent exits `0`.
+- Require `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END` with valid receipt JSON when agent exits `0`.
 - Complete or fail every claimed job.
 - Never commit or push by default.
 

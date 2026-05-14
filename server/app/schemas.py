@@ -16,6 +16,7 @@ class LogCreate(BaseModel):
 class CompleteJob(BaseModel):
     exit_code: int = 0
     final_summary: str = ""
+    receipt_json: str = ""
     git_diff: str = ""
 
 
@@ -23,6 +24,7 @@ class FailJob(BaseModel):
     exit_code: int = 1
     error_message: str = ""
     final_summary: str = ""
+    receipt_json: str = ""
     git_diff: str = ""
 
 

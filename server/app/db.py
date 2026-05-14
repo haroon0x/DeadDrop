@@ -1,3 +1,4 @@
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -51,6 +52,7 @@ jobs = Table(
     Column("completed_at", Text),
     Column("error_message", Text),
     Column("final_summary", Text),
+    Column("receipt_json", Text),
     Column("git_diff", Text),
     Column("exit_code", Integer),
     Index("idx_jobs_status_worker", "status", "worker_name", "created_at"),
@@ -121,6 +123,16 @@ def connect():
 
 def init_db() -> None:
     metadata.create_all(engine())
+    ensure_schema()
+
+
+def ensure_schema() -> None:
+    with engine().begin() as conn:
+        columns = {row["name"] for row in conn.execute(text("SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'jobs'")).mappings()} if conn.dialect.name != "sqlite" else {
+            row["name"] for row in conn.execute(text("PRAGMA table_info(jobs)")).mappings()
+        }
+        if "receipt_json" not in columns:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN receipt_json TEXT"))
 
 
 def reset_engine_for_tests() -> None:
@@ -132,7 +144,17 @@ def reset_engine_for_tests() -> None:
 
 
 def row_to_dict(row: Any | None) -> dict[str, Any] | None:
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    data["receipt"] = None
+    raw = data.get("receipt_json")
+    if raw:
+        try:
+            data["receipt"] = json.loads(raw)
+        except json.JSONDecodeError:
+            data["receipt"] = None
+    return data
 
 
 def list_jobs(conn: Connection) -> list[dict[str, Any]]:

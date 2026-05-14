@@ -91,9 +91,9 @@ func (c Client) Log(jobID int, stream, content string) {
 	_, _ = c.request("POST", fmt.Sprintf("/api/worker/jobs/%d/logs", jobID), map[string]string{"stream": stream, "content": content})
 }
 
-func (c Client) Complete(jobID, exitCode int, summary, diff string) error {
+func (c Client) Complete(jobID, exitCode int, summary, receiptJSON, diff string) error {
 	res, err := c.request("POST", fmt.Sprintf("/api/worker/jobs/%d/complete", jobID), map[string]any{
-		"exit_code": exitCode, "final_summary": summary, "git_diff": diff,
+		"exit_code": exitCode, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff,
 	})
 	if err != nil {
 		return err
@@ -106,9 +106,9 @@ func (c Client) Complete(jobID, exitCode int, summary, diff string) error {
 	return nil
 }
 
-func (c Client) Fail(jobID, exitCode int, message, summary, diff string) error {
+func (c Client) Fail(jobID, exitCode int, message, summary, receiptJSON, diff string) error {
 	res, err := c.request("POST", fmt.Sprintf("/api/worker/jobs/%d/fail", jobID), map[string]any{
-		"exit_code": exitCode, "error_message": message, "final_summary": summary, "git_diff": diff,
+		"exit_code": exitCode, "error_message": message, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff,
 	})
 	if err != nil {
 		return err

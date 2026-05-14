@@ -120,6 +120,39 @@ def test_owner_supplied_job_routing_is_ignored():
     assert body["worker_name"] == "local"
 
 
+def test_structured_receipt_renders_as_sections():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Receipt", "prompt": "Return structured receipt"},
+    )
+    job_id = create.json()["id"]
+    receipt_json = (
+        '{"status":"completed","summary":"Fixed the parser.",'
+        '"changed_files":["parser.py"],'
+        '"verification":[{"command":"pytest","status":"passed","summary":"3 passed"}],'
+        '"blockers":[],"notes":"No commit created."}'
+    )
+    complete = c.post(
+        f"/api/worker/jobs/{job_id}/complete",
+        headers=worker_headers(),
+        json={"exit_code": 0, "final_summary": "Fixed the parser.", "receipt_json": receipt_json, "git_diff": ""},
+    )
+    assert complete.status_code == 200
+
+    api = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
+    assert api.json()["receipt"]["summary"] == "Fixed the parser."
+
+    page = c.get(f"/jobs/{job_id}", cookies={"owner_token": "owner_test"})
+    assert page.status_code == 200
+    assert "Changed files" in page.text
+    assert "parser.py" in page.text
+    assert "Verification" in page.text
+    assert "3 passed" in page.text
+    assert "<summary>Live logs</summary>" in page.text
+
+
 def test_browser_auth_uses_persistent_cookie_not_query_token():
     c = client()
     query_res = c.get("/?token=owner_test", follow_redirects=False)

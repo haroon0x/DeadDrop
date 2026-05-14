@@ -53,7 +53,7 @@ Leave out for MVP:
 - Enforces agent timeout so hung jobs fail cleanly
 - Streams stdout/stderr/system logs
 - Captures final `git diff`
-- Requires receipt markers in agent output and fails successful commands that omit them
+- Requires structured JSON receipt markers in agent output and fails successful commands that omit them
 - Sends final status, summary, exit code, and diff
 
 ## Auth
@@ -110,8 +110,8 @@ Prompt must tell Gemini:
 - Prefer smallest useful change.
 - Do not delete unrelated files.
 - Run smallest relevant test first when useful.
-- Return final answer between `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END`
-- The content inside receipt markers is free-form and should match the user task. It can be an audit, a code-change summary, a direct answer to a file question, or a blocker explanation.
+- Return final answer between `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END`
+- The content inside receipt markers must be valid JSON with `status`, `summary`, `changed_files`, `verification`, `blockers`, and `notes`.
 
 DeadDrop itself captures diff after Gemini exits.
 
@@ -121,13 +121,13 @@ Default Gemini command:
 gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
 ```
 
-The prompt requires a final receipt between `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END`. Worker extracts that block into `final_summary`. If Gemini exits 0 but omits markers, worker marks the job failed because the dashboard would otherwise have no reliable receipt.
+The prompt requires a final receipt between `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END`. Worker extracts and validates that block into `receipt_json` plus a concise `final_summary`. If Gemini exits 0 but omits markers, worker marks the job failed because the dashboard would otherwise have no reliable receipt.
 
 ## Server Pages
 
 - Dashboard: newest jobs, status, repo alias, created/updated times
 - New job: title and task prompt
-- Job detail: prompt, receipt, live logs, summary, error, diff
+- Job detail: prompt, structured receipt, collapsible live logs, error, diff
 - Demo page: safe fake completed job
 
 ## APIs

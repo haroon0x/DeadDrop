@@ -118,7 +118,7 @@ Default Gemini mode runs unattended inside the configured workspace:
 gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
 ```
 
-The worker prompt tells Gemini to avoid commits/pushes and finish with a `DEADDROP_RECEIPT` block. Content inside that block is free-form: Gemini can return an audit, answer a question about file lines, explain a blocker, or summarize code edits. Worker extracts that receipt into the job summary and captures `git diff` when the workspace is inside a git worktree. If Gemini exits successfully but omits receipt markers, the worker marks the job failed.
+The worker prompt tells Gemini to avoid commits/pushes and finish with a structured `DEADDROP_RECEIPT_JSON` block. Worker validates that JSON, renders it as result/changed-files/verification/blocker sections, and still streams terminal stdout/stderr into collapsible live logs. It captures `git diff` when the workspace is inside a git worktree. If Gemini exits successfully but omits receipt markers, the worker marks the job failed.
 
 Override if your install differs:
 

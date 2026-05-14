@@ -27,7 +27,7 @@ The built-in Gemini mode executes Gemini directly without a shell and redacts th
 
 Use `--agent-timeout 900` to control max agent runtime in seconds.
 
-Gemini should wrap its final answer with `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END`. Content inside those markers is free-form and can answer the user task directly. If Gemini emits the start marker but forgets the end marker, the worker keeps the output from the start marker as the receipt so simple tasks do not fail. If no receipt marker appears on a zero-exit run, the worker fails the job because DeadDrop needs a reliable receipt.
+Gemini should wrap its final answer with `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END`. Content inside those markers must be valid JSON with `status`, `summary`, `changed_files`, `verification`, `blockers`, and `notes`. The worker renders that JSON as clean receipt sections and keeps raw stdout/stderr in live logs. If no receipt marker appears on a zero-exit run, the worker fails the job because DeadDrop needs a reliable receipt.
 
 Use `--run-once` for smoke tests or one-shot process managers. The worker registers workspaces, polls once, processes at most one job, reports completion/failure, and exits.
 

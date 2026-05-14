@@ -16,18 +16,70 @@
     <button type="submit" class="secondary-button">Cancel queued job</button>
   </form>
   {% endif %}
-  {% if job.final_summary %}<pre class="summary">{{ job.final_summary }}</pre>{% endif %}
+  {% if job.receipt %}
+  {% set receipt = job.receipt %}
+  <div class="receipt-grid">
+    <article class="receipt-card result-card">
+      <span class="receipt-label">Result</span>
+      <h3>{{ receipt.summary or job.final_summary or "No summary returned." }}</h3>
+      {% if receipt.notes %}<p>{{ receipt.notes }}</p>{% endif %}
+    </article>
+
+    <article class="receipt-card">
+      <span class="receipt-label">Changed files</span>
+      {% if receipt.changed_files %}
+      <ul class="receipt-list">
+        {% for file in receipt.changed_files %}
+        <li>{{ file }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No changed files reported.</p>
+      {% endif %}
+    </article>
+
+    <article class="receipt-card">
+      <span class="receipt-label">Verification</span>
+      {% if receipt.verification %}
+      <ul class="receipt-list">
+        {% for check in receipt.verification %}
+        <li><strong>{{ check.command }}</strong> <span class="badge {{ check.status }}">{{ check.status }}</span><br>{{ check.summary }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No verification reported.</p>
+      {% endif %}
+    </article>
+
+    <article class="receipt-card">
+      <span class="receipt-label">Blockers</span>
+      {% if receipt.blockers %}
+      <ul class="receipt-list blockers">
+        {% for blocker in receipt.blockers %}
+        <li>{{ blocker }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">None.</p>
+      {% endif %}
+    </article>
+  </div>
+  {% elif job.final_summary %}
+  <pre class="summary">{{ job.final_summary }}</pre>
+  {% endif %}
   {% if job.git_diff %}<p class="muted">No commit was created. Review the diff before accepting changes locally.</p>{% endif %}
   {% if job.error_message %}<pre class="error-box">{{ job.error_message }}</pre>{% endif %}
 </section>
 
 <section class="panel">
-  <h2>Live logs</h2>
+  <details class="log-details" {% if job.status == "running" %}open{% endif %}>
+  <summary>Live logs</summary>
   {% if job.older_logs_available %}
   <p><a class="text-link" href="/jobs/{{ job.id }}?before_log_id={{ job.oldest_log_id }}">Load older logs</a></p>
   {% endif %}
   <pre class="logs">{% for log in job.logs %}<span class="{{ log.stream }}">[{{ log.timestamp }}] {{ log.stream }}: {{ log.content }}</span>
 {% endfor %}</pre>
+  </details>
 </section>
 
 <section class="panel">

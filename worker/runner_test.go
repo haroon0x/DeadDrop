@@ -26,20 +26,56 @@ func TestExtractReceiptAcceptsMissingEndMarker(t *testing.T) {
 	}
 }
 
-func TestBuildSummaryWrapsZeroExitOutputWhenReceiptMissing(t *testing.T) {
-	summary, ok := buildSummary("custom", "demo", 0, "plain output")
-	if !ok {
-		t.Fatal("expected zero-exit output to become receipt")
+func TestBuildSummaryRejectsZeroExitOutputWhenReceiptMissing(t *testing.T) {
+	summary, receiptJSON, ok := buildSummary("custom", "demo", 0, "plain output")
+	if ok {
+		t.Fatal("expected missing receipt to be invalid")
 	}
-	if !strings.Contains(summary, "DEADDROP_RECEIPT\nplain output\nDEADDROP_RECEIPT_END") {
-		t.Fatalf("expected synthetic receipt, got %q", summary)
+	if receiptJSON != "" {
+		t.Fatalf("expected no structured receipt json, got %q", receiptJSON)
+	}
+	if !strings.Contains(summary, "Agent output tail:\nplain output") {
+		t.Fatalf("expected output tail, got %q", summary)
 	}
 }
 
 func TestBuildSummaryReportsMissingReceiptOnNonZeroExit(t *testing.T) {
-	_, ok := buildSummary("custom", "demo", 1, "plain output")
+	_, _, ok := buildSummary("custom", "demo", 1, "plain output")
 	if ok {
 		t.Fatal("expected non-zero output without receipt to remain invalid")
+	}
+}
+
+func TestBuildSummaryExtractsStructuredReceiptJSON(t *testing.T) {
+	output := `noise
+DEADDROP_RECEIPT_JSON
+{"status":"completed","summary":"Fixed bug","changed_files":["app.py"],"verification":[{"command":"pytest","status":"passed","summary":"1 passed"}],"blockers":[],"notes":"ok"}
+DEADDROP_RECEIPT_JSON_END`
+	summary, receiptJSON, ok := buildSummary("gemini", "default", 0, output)
+	if !ok {
+		t.Fatal("expected structured receipt")
+	}
+	if !strings.Contains(summary, "Fixed bug") {
+		t.Fatalf("expected summary text, got %q", summary)
+	}
+	if !strings.Contains(receiptJSON, `"changed_files":["app.py"]`) {
+		t.Fatalf("expected normalized receipt json, got %q", receiptJSON)
+	}
+}
+
+func TestBuildSummaryRejectsInvalidStructuredReceiptJSON(t *testing.T) {
+	output := `DEADDROP_RECEIPT_JSON
+{"status":
+DEADDROP_RECEIPT_JSON_END`
+	summary, receiptJSON, ok := buildSummary("gemini", "default", 0, output)
+	if ok {
+		t.Fatal("expected invalid structured receipt to fail")
+	}
+	if receiptJSON != "" {
+		t.Fatalf("expected no receipt json, got %q", receiptJSON)
+	}
+	if !strings.Contains(summary, "Invalid structured receipt JSON") {
+		t.Fatalf("expected invalid json message, got %q", summary)
 	}
 }
 

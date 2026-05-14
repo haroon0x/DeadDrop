@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,10 +18,11 @@ import (
 )
 
 type RunResult struct {
-	ExitCode int
-	Summary  string
-	Diff     string
-	Err      error
+	ExitCode    int
+	Summary     string
+	ReceiptJSON string
+	Diff        string
+	Err         error
 }
 
 type CommandResult struct {
@@ -65,16 +67,16 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 	diff := captureGitDiff(repo.Path)
 	status := captureGitStatus(repo.Path)
 	c.Log(job.ID, "system", "Final git status:\n"+status)
-	summary, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, command.Output)
+	summary, receiptJSON, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, command.Output)
 	if !hasReceipt && err == nil {
 		err = fmt.Errorf("agent completed but did not emit DeadDrop receipt markers")
 		command.ExitCode = 2
 		c.Log(job.ID, "system", err.Error())
 	}
 	if err != nil {
-		return RunResult{ExitCode: command.ExitCode, Summary: summary, Diff: diff, Err: err}
+		return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff, Err: err}
 	}
-	return RunResult{ExitCode: command.ExitCode, Summary: summary, Diff: diff}
+	return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff}
 }
 
 func finish(cfg Config, c Client, jobID, code int, message, summary string) RunResult {
@@ -115,18 +117,31 @@ You are Gemini CLI running inside one trusted local workspace directory.
 6. Human reviews git diff later if workspace is in a git repo, so keep receipt concise and operational.
 
 ## Required Final Output
-At very end, print exactly this structure:
+At very end, print exactly this structure and nothing after it:
 
 START LINE:
-DEADDROP_RECEIPT
+DEADDROP_RECEIPT_JSON
 
 THEN:
-Short result, changed files if any, verification run if any, blockers if any.
+A single valid JSON object matching this schema:
+{
+  "status": "completed" | "failed" | "blocked",
+  "summary": "One short plain-English result.",
+  "changed_files": ["relative/path.ext"],
+  "verification": [
+    {"command": "pytest", "status": "passed" | "failed" | "not_run", "summary": "short outcome"}
+  ],
+  "blockers": ["short blocker if any"],
+  "notes": "Optional concise notes."
+}
 
 END LINE:
-DEADDROP_RECEIPT_END
+DEADDROP_RECEIPT_JSON_END
 
-Do not print DEADDROP_RECEIPT until final answer.
+Rules:
+- Output JSON only between markers.
+- Use [] for no changed files, no verification, or no blockers.
+- Do not print DEADDROP_RECEIPT_JSON until final answer.
 `, alias, repo, task)
 }
 
@@ -202,11 +217,12 @@ func redactedCommandForLog(tmpl string, repo RepoConfig) string {
 }
 
 func logCommand(dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
-	c.Log(jobID, "system", "Running: "+name+" "+strings.Join(args, " "))
+	c.Log(jobID, "system", "Running in "+dir+": "+name+" "+strings.Join(args, " "))
 	return streamCommand(2*time.Minute, dir, c, jobID, name, args...)
 }
 
 func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.Command(name, args...)
@@ -245,17 +261,22 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 	}
 	<-done
 	<-done
+	elapsed := time.Since(start).Round(time.Second)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		msg := fmt.Sprintf("command timed out after %s", timeout)
 		c.Log(jobID, "stderr", msg)
+		c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 124 after %s", elapsed))
 		return CommandResult{ExitCode: 124, Output: output.String()}, fmt.Errorf("%s", msg)
 	}
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
+			c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code %d after %s", exit.ExitCode(), elapsed))
 			return CommandResult{ExitCode: exit.ExitCode(), Output: output.String()}, err
 		}
+		c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 1 after %s", elapsed))
 		return CommandResult{ExitCode: 1, Output: output.String()}, err
 	}
+	c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 0 after %s", elapsed))
 	return CommandResult{ExitCode: 0, Output: output.String()}, nil
 }
 
@@ -310,19 +331,63 @@ func replaceTemplate(tmpl, key, value string) string {
 	return strings.ReplaceAll(tmpl, "{{"+key+"}}", quoted)
 }
 
-func buildSummary(agent, alias string, exitCode int, output string) (string, bool) {
+type Receipt struct {
+	Status       string         `json:"status"`
+	Summary      string         `json:"summary"`
+	ChangedFiles []string       `json:"changed_files"`
+	Verification []Verification `json:"verification"`
+	Blockers     []string       `json:"blockers"`
+	Notes        string         `json:"notes"`
+}
+
+type Verification struct {
+	Command string `json:"command"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+}
+
+func buildSummary(agent, alias string, exitCode int, output string) (string, string, bool) {
+	if strings.Contains(output, "DEADDROP_RECEIPT_JSON") {
+		if receiptJSON, receipt, ok := extractReceiptJSON(output); ok {
+			summary := receipt.Summary
+			if strings.TrimSpace(summary) == "" {
+				summary = "Agent returned a structured receipt."
+			}
+			return fmt.Sprintf("%s\n\nWorker receipt:\nAgent mode: %s\nRepo alias: %s\nExit code: %d\nNo commit was created by DeadDrop. Review git diff before accepting changes locally.", summary, agent, alias, exitCode), receiptJSON, true
+		}
+		return fmt.Sprintf("Invalid structured receipt JSON.\n\nAgent output tail:\n%s", tail(output, 3000)), "", false
+	}
 	receipt := extractReceipt(output)
 	hasReceipt := receipt != ""
 	if receipt == "" {
 		body := tail(output, 3000)
-		if strings.TrimSpace(body) != "" && exitCode == 0 {
-			receipt = "DEADDROP_RECEIPT\n" + body + "\nDEADDROP_RECEIPT_END"
-			hasReceipt = true
-		} else {
-			receipt = "Agent output tail:\n" + body
-		}
+		receipt = "Agent output tail:\n" + body
 	}
-	return fmt.Sprintf("%s\n\nWorker receipt:\nAgent mode: %s\nRepo alias: %s\nExit code: %d\nNo commit was created by DeadDrop. Review git diff before accepting changes locally.", receipt, agent, alias, exitCode), hasReceipt
+	return fmt.Sprintf("%s\n\nWorker receipt:\nAgent mode: %s\nRepo alias: %s\nExit code: %d\nNo commit was created by DeadDrop. Review git diff before accepting changes locally.", receipt, agent, alias, exitCode), "", hasReceipt
+}
+
+func extractReceiptJSON(output string) (string, Receipt, bool) {
+	var receipt Receipt
+	start := strings.Index(output, "DEADDROP_RECEIPT_JSON\n")
+	end := strings.LastIndex(output, "DEADDROP_RECEIPT_JSON_END")
+	if start == -1 || end == -1 || end <= start {
+		return "", receipt, false
+	}
+	body := strings.TrimSpace(output[start+len("DEADDROP_RECEIPT_JSON\n") : end])
+	if body == "" {
+		return "", receipt, false
+	}
+	if err := json.Unmarshal([]byte(body), &receipt); err != nil {
+		return "", receipt, false
+	}
+	if strings.TrimSpace(receipt.Status) == "" {
+		receipt.Status = "completed"
+	}
+	normalized, err := json.Marshal(receipt)
+	if err != nil {
+		return "", receipt, false
+	}
+	return string(normalized), receipt, true
 }
 
 func extractReceipt(output string) string {
@@ -347,14 +412,21 @@ func tail(s string, max int) string {
 
 func mockReceipt(changed bool) string {
 	changeLine := "No deterministic app.py change was needed."
+	files := "[]"
 	if changed {
 		changeLine = "Changed app.py so add(a, b) returns a + b instead of a - b."
+		files = `["app.py"]`
 	}
-	return `DEADDROP_RECEIPT
-Completed.
-
-` + changeLine + `
-Ran pytest before and after the change.
-Review git diff before committing.
-DEADDROP_RECEIPT_END`
+	return `DEADDROP_RECEIPT_JSON
+{
+  "status": "completed",
+  "summary": "` + changeLine + `",
+  "changed_files": ` + files + `,
+  "verification": [
+    {"command": "pytest", "status": "passed", "summary": "Ran before and after the change."}
+  ],
+  "blockers": [],
+  "notes": "No commit was created."
+}
+DEADDROP_RECEIPT_JSON_END`
 }

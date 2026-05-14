@@ -29,7 +29,7 @@ Worker can start with local JSON manifest:
 
 On startup, worker registers aliases and display names with `/api/worker/register`. Server stores only `worker_name`, `repo_alias`, display name, and timestamps.
 
-Gemini runs inside the configured local workspace path. DeadDrop leaves autonomous code work to Gemini, but keeps the transport and audit loop deterministic: job claim, bounded command runtime, streamed logs, receipt marker extraction, final status, and best-effort scoped `git diff`. DeadDrop does not commit.
+Gemini runs inside the configured local workspace path. DeadDrop leaves autonomous code work to Gemini, but keeps the transport and audit loop deterministic: job claim, bounded command runtime, streamed terminal logs, structured JSON receipt extraction, final status, and best-effort scoped `git diff`. DeadDrop does not commit.
 
 ## Security and Hardening
 
