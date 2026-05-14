@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import insert, text, update
 
 from . import models
-from .auth import owner_from_request, require_owner, require_worker, secure_cookies
+from .auth import owner_from_request, require_owner, require_worker, secure_cookies, validate_auth_config
 from .db import (
     claim_next_job,
     connect,
@@ -34,6 +34,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 @app.on_event("startup")
 def startup() -> None:
+    validate_auth_config()
     init_db()
 
 

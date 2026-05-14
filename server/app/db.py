@@ -93,6 +93,8 @@ def database_url() -> str:
     if url:
         if url.startswith("postgres://"):
             return "postgresql+psycopg://" + url.removeprefix("postgres://")
+        if url.startswith("postgresql://"):
+            return "postgresql+psycopg://" + url.removeprefix("postgresql://")
         return url
     path = "./deaddrop.db"
     Path(path).parent.mkdir(parents=True, exist_ok=True)
