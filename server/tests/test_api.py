@@ -59,7 +59,7 @@ def test_create_job_and_worker_flow():
     create = c.post(
         "/api/jobs",
         headers=owner_headers(),
-        json={"title": "Fix test", "prompt": "Fix failing test", "repo_alias": "default", "worker_name": "local"},
+        json={"title": "Fix test", "prompt": "Fix failing test"},
     )
     assert create.status_code == 200
     job_id = create.json()["id"]
@@ -92,7 +92,7 @@ def test_create_job_and_worker_flow():
     assert fetched.json()["logs"][0]["content"] == "Picked up job"
 
 
-def test_new_job_page_hides_worker_choice_and_shows_repo_dropdown():
+def test_new_job_page_hides_repo_and_worker_choice():
     c = client()
     c.post(
         "/api/worker/register",
@@ -101,9 +101,23 @@ def test_new_job_page_hides_worker_choice_and_shows_repo_dropdown():
     )
     res = c.get("/jobs/new", cookies={"owner_token": "owner_test"})
     assert res.status_code == 200
-    assert 'name="repo_alias"' in res.text
-    assert 'type="hidden" name="worker_name"' in res.text
+    assert 'name="repo_alias"' not in res.text
+    assert 'name="worker_name"' not in res.text
     assert ">Worker<" not in res.text
+    assert ">Repo<" not in res.text
+
+
+def test_owner_supplied_job_routing_is_ignored():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Route", "prompt": "No-op", "repo_alias": "other", "worker_name": "other"},
+    )
+    assert create.status_code == 200
+    body = create.json()
+    assert body["repo_alias"] == "default"
+    assert body["worker_name"] == "local"
 
 
 def test_browser_auth_uses_persistent_cookie_not_query_token():
@@ -130,7 +144,7 @@ def test_queued_job_can_be_cancelled_from_page():
     create = c.post(
         "/api/jobs",
         headers=owner_headers(),
-        json={"title": "Cancel me", "prompt": "No-op", "repo_alias": "default", "worker_name": "local"},
+        json={"title": "Cancel me", "prompt": "No-op"},
     )
     job_id = create.json()["id"]
 
@@ -159,7 +173,7 @@ def test_job_logs_are_paginated():
     create = c.post(
         "/api/jobs",
         headers=owner_headers(),
-        json={"title": "Logs", "prompt": "Emit logs", "repo_alias": "default", "worker_name": "local"},
+        json={"title": "Logs", "prompt": "Emit logs"},
     )
     job_id = create.json()["id"]
     for i in range(205):

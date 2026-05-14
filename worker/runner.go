@@ -35,11 +35,11 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 		msg := fmt.Sprintf("job repo_alias %q is not in worker manifest", job.RepoAlias)
 		return finish(cfg, c, job.ID, 1, msg, msg)
 	}
-	if err := validateGitRepoRoot(repo.Path); err != nil {
+	if err := validateWorkspace(repo.Path); err != nil {
 		return finish(cfg, c, job.ID, 1, err.Error(), err.Error())
 	}
-	c.Log(job.ID, "system", "Inspecting repo")
-	logCommand(repo.Path, c, job.ID, "git", "status", "--short")
+	c.Log(job.ID, "system", "Inspecting workspace")
+	logGitStatus(repo.Path, c, job.ID)
 	prompt := buildPrompt(repo.Path, repo.Alias, job.Prompt)
 
 	var command CommandResult
@@ -62,8 +62,8 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 		return finish(cfg, c, job.ID, 1, "unknown agent mode: "+cfg.Agent, "")
 	}
 
-	diff := capture(repo.Path, "git", "diff")
-	status := capture(repo.Path, "git", "status", "--short")
+	diff := captureGitDiff(repo.Path)
+	status := captureGitStatus(repo.Path)
 	c.Log(job.ID, "system", "Final git status:\n"+status)
 	summary, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, command.Output)
 	if !hasReceipt && err == nil {
@@ -82,35 +82,22 @@ func finish(cfg Config, c Client, jobID, code int, message, summary string) RunR
 	return RunResult{ExitCode: code, Summary: summary, Diff: "", Err: fmt.Errorf("%s", message)}
 }
 
-func validateGitRepoRoot(path string) error {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	cmd.Dir = path
-	out, err := cmd.Output()
+func validateWorkspace(path string) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("configured repo is not a git repo")
+		return fmt.Errorf("configured workspace path is invalid: %w", err)
 	}
-	top, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
-	if err != nil {
-		return fmt.Errorf("configured repo root is invalid: %w", err)
+	if !info.IsDir() {
+		return fmt.Errorf("configured workspace path is not a directory")
 	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("configured repo path is invalid: %w", err)
-	}
-	configured, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return fmt.Errorf("configured repo path is invalid: %w", err)
-	}
-	if top != configured {
-		return fmt.Errorf("configured repo path must be the git worktree root: %s", top)
-	}
-	return nil
+	_, err = filepath.Abs(path)
+	return err
 }
 
 func buildPrompt(repo, alias, task string) string {
 	return fmt.Sprintf(`# DeadDrop Worker Task
 
-You are Gemini CLI running inside one trusted local git workspace.
+You are Gemini CLI running inside one trusted local workspace directory.
 
 ## Workspace
 - Repo alias: %s
@@ -120,12 +107,12 @@ You are Gemini CLI running inside one trusted local git workspace.
 %s
 
 ## Operating Rules
-1. Work only inside current repository.
+1. Work only inside current workspace directory.
 2. Do not commit, push, reset, or delete unrelated files.
 3. For inspection/question tasks, answer directly; code edits are not required.
 4. For change tasks, make smallest useful change and run smallest relevant verification.
 5. If blocked or ambiguous, explain blocker and what you checked.
-6. Human reviews diff later, so keep receipt concise and operational.
+6. Human reviews git diff later if workspace is in a git repo, so keep receipt concise and operational.
 
 ## Required Final Output
 At very end, print exactly this structure:
@@ -155,6 +142,7 @@ func runMock(cfg Config, repo RepoConfig, c Client, jobID int) (CommandResult, e
 		return CommandResult{ExitCode: 1}, err
 	}
 	old := "return a - b"
+	changed := false
 	if strings.Contains(string(data), old) {
 		c.Log(jobID, "system", "Mock agent: applying deterministic add() fix")
 		if !cfg.DryRun {
@@ -162,11 +150,12 @@ func runMock(cfg Config, repo RepoConfig, c Client, jobID int) (CommandResult, e
 			if err := os.WriteFile(appPath, []byte(next), 0644); err != nil {
 				return CommandResult{ExitCode: 1}, err
 			}
+			changed = true
 		}
 	}
 	c.Log(jobID, "system", "Mock agent: running verification")
 	verify, err := runPythonModule(repo.Path, c, jobID, "pytest")
-	verify.Output += "\n" + mockReceipt()
+	verify.Output += "\n" + mockReceipt(changed)
 	return verify, err
 }
 
@@ -175,6 +164,14 @@ func runPythonModule(dir string, c Client, jobID int, module string) (CommandRes
 		return logCommand(dir, c, jobID, "python", "-m", module)
 	}
 	return logCommand(dir, c, jobID, "python3", "-m", module)
+}
+
+func logGitStatus(dir string, c Client, jobID int) {
+	if !isGitWorktree(dir) {
+		c.Log(jobID, "system", "Workspace is not inside a git worktree; git status/diff capture disabled")
+		return
+	}
+	logCommand(dir, c, jobID, "git", "status", "--short", "--", ".")
 }
 
 func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt, task string) (CommandResult, error) {
@@ -214,6 +211,7 @@ func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name 
 	defer cancel()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -280,6 +278,27 @@ func capture(dir, name string, args ...string) string {
 	return out.String()
 }
 
+func isGitWorktree(dir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
+func captureGitStatus(dir string) string {
+	if !isGitWorktree(dir) {
+		return "Workspace is not inside a git worktree; no git status available."
+	}
+	return capture(dir, "git", "status", "--short", "--", ".")
+}
+
+func captureGitDiff(dir string) string {
+	if !isGitWorktree(dir) {
+		return ""
+	}
+	return capture(dir, "git", "diff", "--", ".")
+}
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
@@ -326,11 +345,15 @@ func tail(s string, max int) string {
 	return s[len(s)-max:]
 }
 
-func mockReceipt() string {
+func mockReceipt(changed bool) string {
+	changeLine := "No deterministic app.py change was needed."
+	if changed {
+		changeLine = "Changed app.py so add(a, b) returns a + b instead of a - b."
+	}
 	return `DEADDROP_RECEIPT
 Completed.
 
-Changed app.py so add(a, b) returns a + b instead of a - b.
+` + changeLine + `
 Ran pytest before and after the change.
 Review git diff before committing.
 DEADDROP_RECEIPT_END`

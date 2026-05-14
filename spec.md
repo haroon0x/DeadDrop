@@ -6,7 +6,7 @@ Tagline: **Leave a coding task. Come back to the diff.**
 
 ## Product Shape
 
-A user opens a phone-friendly web dashboard, chooses a repo alias, writes a coding task, and submits it. A local worker running on the user's PC polls the hosted server, claims the job, runs Gemini CLI or a configured command inside the trusted local repo, streams logs back, captures `git diff`, and returns a receipt.
+A user opens a phone-friendly web dashboard, writes a coding task, and submits it. A local worker running on the user's PC polls the hosted server, claims the job, runs Gemini CLI or a configured command inside the trusted local workspace, streams logs back, captures `git diff`, and returns a receipt.
 
 The smallest interesting version is:
 
@@ -47,9 +47,9 @@ Leave out for MVP:
 - Go CLI
 - Polls server with `WORKER_TOKEN`
 - Runs on user's PC
-- Uses local workspace manifest to map `repo_alias` to local paths
-- Registers available repos with server on startup
-- Executes agent inside selected repo only
+- Uses local workspace config to map fixed `repo_alias=default` to a local path
+- Registers the fixed workspace with server on startup
+- Executes agent inside configured workspace only
 - Enforces agent timeout so hung jobs fail cleanly
 - Streams stdout/stderr/system logs
 - Captures final `git diff`
@@ -85,12 +85,12 @@ Server must not know absolute local paths. Worker owns a local manifest:
 }
 ```
 
-Worker registers aliases and display names with server. Dashboard uses these for repo dropdown. Jobs store `repo_alias`, not paths.
+Worker registers alias and display name with server. Dashboard does not expose repo selection. Browser-created jobs store `repo_alias=default`, not paths.
 
 ## Job Flow
 
 1. User creates job from dashboard.
-2. Server stores queued job with `repo_alias` and internal `worker_name=local`.
+2. Server stores queued job with fixed `repo_alias=default` and internal `worker_name=local`.
 3. Worker polls `/api/worker/next`.
 4. Server atomically marks oldest matching queued job as running.
 5. Worker verifies repo exists and is git repo.
@@ -126,7 +126,7 @@ The prompt requires a final receipt between `DEADDROP_RECEIPT` and `DEADDROP_REC
 ## Server Pages
 
 - Dashboard: newest jobs, status, repo alias, created/updated times
-- New job: title, repo dropdown, task prompt
+- New job: title and task prompt
 - Job detail: prompt, receipt, live logs, summary, error, diff
 - Demo page: safe fake completed job
 

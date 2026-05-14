@@ -53,12 +53,12 @@ The worker must:
 - Register manifest repo aliases on startup.
 - Claim only jobs routed to its worker name.
 - Resolve `repo_alias` locally.
-- Require configured repo paths to be git worktree roots.
-- Run the agent inside the selected repo.
+- Require configured workspace paths to be existing directories.
+- Run the agent inside the selected workspace.
 - Stream non-empty logs only.
 - Enforce `--agent-timeout`.
 - Kill the spawned process group on timeout.
-- Capture `git diff` after agent exit.
+- Capture scoped `git diff -- .` after agent exit when workspace is inside a git worktree.
 - Require `DEADDROP_RECEIPT` and `DEADDROP_RECEIPT_END` when agent exits `0`.
 - Complete or fail every claimed job.
 - Never commit or push by default.

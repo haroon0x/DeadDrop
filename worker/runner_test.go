@@ -43,6 +43,17 @@ func TestBuildSummaryReportsMissingReceiptOnNonZeroExit(t *testing.T) {
 	}
 }
 
+func TestMockReceiptReportsWhetherCodeChanged(t *testing.T) {
+	changed := mockReceipt(true)
+	if !strings.Contains(changed, "Changed app.py") {
+		t.Fatalf("expected changed receipt, got %q", changed)
+	}
+	unchanged := mockReceipt(false)
+	if !strings.Contains(unchanged, "No deterministic app.py change was needed") {
+		t.Fatalf("expected unchanged receipt, got %q", unchanged)
+	}
+}
+
 func TestRedactedCommandForLogHidesPromptAndTask(t *testing.T) {
 	got := redactedCommandForLog(`agent --prompt "{{prompt}}" --task '{{task}}' --repo "{{repo}}"`, RepoConfig{
 		Alias: "demo",
@@ -60,19 +71,26 @@ func TestRedactedCommandForLogHidesPromptAndTask(t *testing.T) {
 	}
 }
 
-func TestValidateGitRepoRootRejectsSubdir(t *testing.T) {
+func TestValidateWorkspaceAcceptsPlainDirAndGitSubdir(t *testing.T) {
 	dir := t.TempDir()
 	runTestCommand(t, dir, "git", "init")
 	subdir := filepath.Join(dir, "subdir")
 	if err := os.Mkdir(subdir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	err := validateGitRepoRoot(subdir)
-	if err == nil || !strings.Contains(err.Error(), "git worktree root") {
-		t.Fatalf("expected git worktree root error, got %v", err)
+	if err := validateWorkspace(subdir); err != nil {
+		t.Fatalf("expected git subdir workspace to pass, got %v", err)
 	}
-	if err := validateGitRepoRoot(dir); err != nil {
-		t.Fatalf("expected repo root to pass, got %v", err)
+	plain := t.TempDir()
+	if err := validateWorkspace(plain); err != nil {
+		t.Fatalf("expected plain directory workspace to pass, got %v", err)
+	}
+	file := filepath.Join(plain, "file.txt")
+	if err := os.WriteFile(file, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkspace(file); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected file workspace to fail, got %v", err)
 	}
 }
 

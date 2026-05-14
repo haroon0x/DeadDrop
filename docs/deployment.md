@@ -50,9 +50,9 @@ Render will host the DeadDrop FastAPI server in a secure Docker container.
 The worker runs on your local machine and polls the server for tasks.
 
 1.  **Clone your fork** locally.
-2.  **Configure the Manifest**:
-    - Edit `worker/deaddrop.manifest.example.json` (or create your own).
-    - Map aliases to the absolute paths of the git repositories you want to work in.
+2.  **Configure the Workspace**:
+    - Pick the one directory the worker should run inside. It may be a git repo, a subdirectory of a repo, or a plain folder.
+    - Use `repo_alias` / `--repo-alias` value `default`; browser-created jobs always route to `local` / `default`.
 3.  **Start the Worker**:
     ```bash
     cd worker
@@ -60,10 +60,11 @@ The worker runs on your local machine and polls the server for tasks.
       --server https://your-app-name.onrender.com \
       --token YOUR_WORKER_TOKEN \
       --worker local \
-      --manifest deaddrop.manifest.json \
+      --repo /absolute/path/to/your/workspace \
+      --repo-alias default \
       --agent gemini
     ```
-    The worker will register your repos with the server and start polling.
+    The worker will register the fixed workspace with the server and start polling.
 
 ---
 
@@ -86,7 +87,7 @@ Every single request is guarded by high-entropy tokens:
 
 ### 4. Worker Hardening
 - **No Root Execution**: The Go worker will refuse to start if run as `root`. This limits the potential damage if a malicious task prompt were somehow executed.
-- **Path Isolation**: The worker only operates inside the directories you explicitly whitelist in your manifest. It further validates that these paths are top-level Git roots to prevent directory traversal attacks.
+- **Path Isolation**: The worker only operates inside the directories you explicitly whitelist with `--repo` or your manifest. Git status and diff capture are scoped to the configured workspace path.
 - **No Auto-Commit**: By default, the system captures a `git diff` but never runs `git commit`. You are the final gatekeeper—you review the diff on the dashboard and apply it manually on your machine.
 
 ---

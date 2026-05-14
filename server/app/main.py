@@ -39,6 +39,9 @@ app = FastAPI(title="DeadDrop")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
+DEFAULT_WORKER_NAME = "local"
+DEFAULT_REPO_ALIAS = "default"
+
 
 @app.on_event("startup")
 def startup() -> None:
@@ -116,10 +119,8 @@ def logout():
 @app.get("/jobs/new", response_class=HTMLResponse)
 def new_job_page(request: Request):
     ensure_owner_page(request)
-    with connect() as conn:
-        repos = list_worker_repos(conn)
     csrf_token = request.cookies.get("csrf_token")
-    return templates.TemplateResponse("new_job.html", {"request": request, "repos": repos, "csrf_token": csrf_token})
+    return templates.TemplateResponse("new_job.html", {"request": request, "csrf_token": csrf_token})
 
 
 @app.post("/jobs", dependencies=[Depends(verify_csrf_token)])
@@ -127,11 +128,9 @@ def create_job_form(
     request: Request,
     title: str = Form(...),
     prompt: str = Form(...),
-    repo_alias: str = Form("default"),
-    worker_name: str = Form("local"),
 ):
     ensure_owner_page(request)
-    job = JobCreate(title=title, prompt=prompt, repo_alias=repo_alias or "default", worker_name=worker_name or "local")
+    job = JobCreate(title=title, prompt=prompt)
     created = create_job(job)
     return RedirectResponse(f"/jobs/{created['id']}", status_code=303)
 
@@ -182,8 +181,8 @@ def create_job(job: JobCreate):
             {
                 "title": job.title,
                 "prompt": job.prompt,
-                "repo_alias": job.repo_alias,
-                "worker_name": job.worker_name,
+                "repo_alias": DEFAULT_REPO_ALIAS,
+                "worker_name": DEFAULT_WORKER_NAME,
                 "status": models.QUEUED,
                 "created_at": ts,
                 "updated_at": ts,

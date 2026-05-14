@@ -44,7 +44,7 @@ export WORKER_TOKEN="$(openssl rand -base64 32)"
 uv run uvicorn app.main:app --reload
 ```
 
-Open `http://localhost:8000/login`, enter your `OWNER_TOKEN`, and drop a task. The form asks for title, repo, and prompt. Worker routing stays internal.
+Open `http://localhost:8000/login`, enter your `OWNER_TOKEN`, and drop a task. The form asks for title and prompt only. Jobs route to the fixed local worker workspace (`local` / `default`).
 
 Start worker:
 
@@ -112,13 +112,13 @@ Flags:
 
 ## Gemini CLI
 
-Default Gemini mode runs unattended inside the selected repo:
+Default Gemini mode runs unattended inside the configured workspace:
 
 ```bash
 gemini --skip-trust --approval-mode yolo --output-format text -p "{{prompt}}"
 ```
 
-The worker prompt tells Gemini to avoid commits/pushes and finish with a `DEADDROP_RECEIPT` block. Content inside that block is free-form: Gemini can return an audit, answer a question about file lines, explain a blocker, or summarize code edits. Worker extracts that receipt into the job summary and captures `git diff` itself. If Gemini exits successfully but omits receipt markers, the worker marks the job failed.
+The worker prompt tells Gemini to avoid commits/pushes and finish with a `DEADDROP_RECEIPT` block. Content inside that block is free-form: Gemini can return an audit, answer a question about file lines, explain a blocker, or summarize code edits. Worker extracts that receipt into the job summary and captures `git diff` when the workspace is inside a git worktree. If Gemini exits successfully but omits receipt markers, the worker marks the job failed.
 
 Override if your install differs:
 
@@ -130,13 +130,13 @@ go run . run --server http://localhost:8000 --token "$WORKER_TOKEN" --worker loc
 
 ## Workspace Manifest
 
-The server never stores absolute local paths. The worker owns a trusted local workspace manifest and registers aliases with the server on startup. Each path must be a git worktree root; pointing an alias at a subdirectory of another repo is rejected so diffs cannot include unrelated files.
+The server never stores absolute local paths. The worker owns the trusted workspace path. Browser-created jobs always route to `worker_name=local` and `repo_alias=default`, so start the worker with one fixed workspace using alias `default`. The path can be any existing directory. If it is inside a git worktree, DeadDrop captures `git status -- .` and `git diff -- .` scoped to that workspace.
 
 ```json
 {
   "repos": [
     {
-      "alias": "demo",
+      "alias": "default",
       "name": "Demo repo",
       "path": "../examples/demo-repo"
     }
@@ -152,15 +152,15 @@ go run . run --server http://localhost:8000 --token "$WORKER_TOKEN" --worker loc
   --manifest deaddrop.manifest.example.json --agent gemini
 ```
 
-Phone UI can pick `repo_alias` from registered repos. The server stores only alias, display name, worker name, and timestamps. Only the local worker knows and maps the real workspace directory.
+The phone UI does not select repositories. The server stores the default alias and worker name, while only the local worker knows and maps the real workspace directory.
 
-Use the manifest for any directory you want Gemini to work in:
+Use the manifest for the directory you want Gemini to work in:
 
 ```json
 {
   "repos": [
     {
-      "alias": "my-app",
+      "alias": "default",
       "name": "My app",
       "path": "/absolute/path/to/my-app"
     }
@@ -206,7 +206,7 @@ DeadDrop is built with a "Trust but Verify" security model:
     -   Use the Supabase Connection Pooler (Port 6543) for production database connections to ensure IPv4 compatibility and encrypted transit.
 4.  **Worker Hardening**:
     -   **No Root**: The worker refuses to run as `root` (UID 0) to minimize impact if a task is malicious.
-    -   **Path Isolation**: The worker only operates within repositories explicitly defined in your local manifest. It validates that the path is a git worktree root to prevent directory traversal attacks.
+    -   **Path Isolation**: The worker only operates within directories explicitly defined by `--repo` or your local manifest. Git status and diff capture are scoped to that workspace path.
     -   **No Auto-Commit**: Gemini is explicitly instructed to never `git commit` or `git push`. You review the diff on the dashboard and apply it manually.
 5.  **Agent Safety**: Worker commands have an agent timeout (`--agent-timeout`, default 900 seconds). Timed-out agents are killed by process group, mark the job failed, and still upload logs/diff where possible.
 
