@@ -163,12 +163,16 @@ MVP uses one internal worker named `local`. The server stores it only to route q
 
 ## Deploying Server To Render
 
-Create a Web Service from this repo and set:
+Use the root `render.yaml` blueprint for hosted deploys. It builds `server/Dockerfile`.
 
-- Root directory: `server`
-- Build command: `uv sync --frozen`
-- Start command: `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Env vars: `OWNER_TOKEN`, `WORKER_TOKEN`, `DATABASE_URL`, `SECURE_COOKIES=true`
+Set these Render environment variables:
+
+- `OWNER_TOKEN`: generate locally with `openssl rand -base64 32`
+- `WORKER_TOKEN`: generate locally with `openssl rand -base64 32`; use the same value when starting your local worker
+- `DATABASE_URL`: Supabase Postgres connection string
+- `SECURE_COOKIES=true`
+
+Do not add `PORT` to `.env.example`. Render injects `PORT` at runtime, and `server/Dockerfile` falls back to `8000` for local Docker runs.
 
 For production/demo, set `DATABASE_URL` to the Supabase Postgres connection string. Do not rely on Render local filesystem persistence. Local development can use SQLite with `DATABASE_URL=sqlite:///./deaddrop.db`.
 

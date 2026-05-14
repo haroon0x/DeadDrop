@@ -17,6 +17,7 @@
 - Render local filesystem persistence is not used for production/demo. Set `DATABASE_URL` to Supabase Postgres. SQLite remains allowed only for quick local tests.
 - Demo repo has its own git repo initialized for clean diffs. Reset demo by editing `examples/demo-repo/app.py` back to `return a - b` and committing/resetting as needed.
 - Worker now rejects manifest paths that are subdirectories of a larger git repo. Each workspace alias should point at the git worktree root.
+- Render deploy source of truth is root `render.yaml`; `server/Dockerfile` honors injected `PORT` and falls back to `8000` locally. `PORT` is not listed in `.env.example` because users do not set it.
 - Avoid long comments; keep code functional and small.
 
 ## Spec Review
@@ -70,5 +71,5 @@
 - [x] Add worker run-once mode for smoke tests and one-shot deployments
 - [x] Add `/healthz` and `/readyz` endpoints for hosted monitoring
 - [ ] Add running-job cancellation protocol from server to worker
-- [ ] Add deployment guide with exact Render + Supabase settings
+- [x] Add deployment guide with exact Render + Supabase settings
 - [ ] Add accept/reject action after diff review, only if MVP demo still feels incomplete

@@ -67,9 +67,11 @@ The worker must:
 
 Do not call this production-ready until these are addressed:
 
+- Hosted deploys use the root `render.yaml` blueprint and `server/Dockerfile`.
+- Render env must include `OWNER_TOKEN`, `WORKER_TOKEN`, `DATABASE_URL`, and `SECURE_COOKIES=true`.
+- Do not put `PORT` in `.env.example`; Render injects it, and local Docker falls back to `8000`.
 - Supabase Postgres `DATABASE_URL` must be configured on hosted deployments.
 - Running-job cancellation that sends an abort signal to the worker.
-- Deployment docs verified on the chosen host.
 
 ## Minimal Verification
 
