@@ -1,7 +1,8 @@
 # Deployment
 
-DeadDrop has two deployment units:
+DeadDrop has three deployment units:
 
+- a static public website
 - a durable server with PostgreSQL
 - a worker on the machine that owns the source repositories
 
@@ -48,9 +49,32 @@ docker compose down
 
 For internet exposure, place the server behind a TLS reverse proxy, set `SECURE_COOKIES=true`, restrict access where practical, and back up the `deaddrop-data` volume.
 
-## Option 2: Render web service and Supabase PostgreSQL
+## Public website on Render
 
-DeadDrop's hosted deployment is a persistent Render web service. The root `render.yaml` builds `server/Dockerfile`, binds to Render's injected `PORT`, and uses `/readyz` as the database-aware health check. Supabase supplies PostgreSQL over its IPv4-compatible shared pooler.
+The public website is an independently deployable Next.js static export. It does not connect to Supabase, expose the owner dashboard, or contain secrets.
+
+Create a new Render **Static Site** from the repository with these settings:
+
+- Root Directory: `frontend`
+- Build Command: `npm ci && npm run build`
+- Publish Directory: `out`
+- Environment Variables: none
+
+Do not convert the existing backend service into a static site. Keep it as a separate web service and create a new Render service for the public site. The root `render.yaml` describes both services when deploying through a Blueprint.
+
+The static export can also be built locally:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+Serve the generated `frontend/out` directory with any static host.
+
+## Render web service and Supabase PostgreSQL
+
+DeadDrop's private application is a persistent Render web service. The root `render.yaml` builds `server/Dockerfile`, binds to Render's injected `PORT`, and uses `/readyz` as the database-aware health check. Supabase supplies PostgreSQL over its IPv4-compatible shared pooler.
 
 Create a Render Blueprint from your fork and set:
 
