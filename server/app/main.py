@@ -1,9 +1,10 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from secrets import compare_digest
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import insert, text, update
@@ -25,29 +26,39 @@ from .db import (
     get_job,
     init_db,
     jobs,
+    job_attempts,
     job_logs,
+    lease_expires_iso,
     list_jobs as list_job_records,
     list_worker_repos,
     now_iso,
     touch_worker,
     upsert_worker_repo,
 )
-from .schemas import CompleteJob, FailJob, JobCreate, LogCreate, WorkerRegister
+from .schemas import AttemptRequest, CancelledJob, CompleteJob, FailJob, JobCreate, LogCreate, WorkerRegister
 
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="DeadDrop")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    validate_auth_config()
+    init_db()
+    yield
+
+
+app = FastAPI(
+    title="DeadDrop",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 DEFAULT_WORKER_NAME = "local"
 DEFAULT_REPO_ALIAS = "default"
-
-
-@app.on_event("startup")
-def startup() -> None:
-    validate_auth_config()
-    init_db()
 
 
 @app.get("/healthz")
@@ -174,6 +185,41 @@ def demo(request: Request):
     return templates.TemplateResponse(request, "demo.html", {"request": request})
 
 
+@app.get("/docs", response_class=HTMLResponse)
+def public_docs(request: Request):
+    return templates.TemplateResponse(request, "docs.html", {"request": request})
+
+
+@app.get("/docs/architecture", response_class=HTMLResponse)
+def public_architecture(request: Request):
+    return templates.TemplateResponse(request, "public_architecture.html", {"request": request})
+
+
+@app.get("/updates", response_class=HTMLResponse)
+def updates(request: Request):
+    return templates.TemplateResponse(request, "updates.html", {"request": request})
+
+
+@app.get("/blog", response_class=HTMLResponse)
+def blog(request: Request):
+    return templates.TemplateResponse(request, "blog.html", {"request": request})
+
+
+@app.get("/blog/disposable-worktrees", response_class=HTMLResponse)
+def disposable_worktrees_post(request: Request):
+    return templates.TemplateResponse(request, "blog_disposable_worktrees.html", {"request": request})
+
+
+@app.get("/blog/evidence-based-receipts", response_class=HTMLResponse)
+def evidence_receipts_post(request: Request):
+    return templates.TemplateResponse(request, "blog_evidence_receipts.html", {"request": request})
+
+
+@app.get("/blog/leases-for-local-agents", response_class=HTMLResponse)
+def leases_post(request: Request):
+    return templates.TemplateResponse(request, "blog_leases.html", {"request": request})
+
+
 @app.post("/api/jobs", dependencies=[Depends(require_owner)])
 def create_job(job: JobCreate):
     ts = now_iso()
@@ -222,7 +268,12 @@ def cancel_job(job_id: int):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         if job["status"] == models.RUNNING:
-            return JSONResponse({"message": "Running cancellation is not supported yet"}, status_code=409)
+            conn.execute(
+                update(jobs)
+                .where(jobs.c.id == job_id, jobs.c.status == models.RUNNING)
+                .values(cancel_requested_at=ts, updated_at=ts)
+            )
+            return get_job(conn, job_id, include_logs=True)
         if job["status"] != models.QUEUED:
             return {"message": f"Job is already {job['status']}"}
         conn.execute(
@@ -258,13 +309,71 @@ def register_worker(body: WorkerRegister):
     return {"ok": True}
 
 
+def require_active_attempt(job: dict, attempt_id: str) -> None:
+    if job["status"] != models.RUNNING:
+        raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
+    if job["attempt_id"] != attempt_id:
+        raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+
+
+def cancel_running_attempt(conn, job: dict, body: CancelledJob, ts: str) -> dict:
+    result = conn.execute(
+        update(jobs)
+        .where(jobs.c.id == job["id"], jobs.c.status == models.RUNNING, jobs.c.attempt_id == body.attempt_id)
+        .values(
+            status=models.CANCELLED,
+            exit_code=body.exit_code,
+            final_summary=body.final_summary,
+            receipt_json=body.receipt_json,
+            git_diff=body.git_diff,
+            updated_at=ts,
+            completed_at=ts,
+            heartbeat_at=ts,
+            lease_expires_at=None,
+        )
+    )
+    if result.rowcount != 1:
+        raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+    conn.execute(
+        update(job_attempts)
+        .where(job_attempts.c.attempt_id == body.attempt_id)
+        .values(status=models.CANCELLED, exit_code=body.exit_code, heartbeat_at=ts, finished_at=ts)
+    )
+    conn.execute(
+        insert(job_logs).values(
+            job_id=job["id"],
+            attempt_id=body.attempt_id,
+            timestamp=ts,
+            stream="system",
+            content="Server accepted cancelled result",
+        )
+    )
+    return {"ok": True, "id": job["id"], "status": models.CANCELLED}
+
+
 @app.post("/api/worker/jobs/{job_id}/heartbeat", dependencies=[Depends(require_worker)])
-def heartbeat(job_id: int, worker_name: str = "local"):
+def heartbeat(job_id: int, body: AttemptRequest):
     ts = now_iso()
+    lease_expires_at = lease_expires_iso()
     with connect() as conn:
-        touch_worker(conn, worker_name)
-        conn.execute(update(jobs).where(jobs.c.id == job_id).values(updated_at=ts))
-    return {"ok": True}
+        job = get_job(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        require_active_attempt(job, body.attempt_id)
+        touch_worker(conn, job["worker_name"])
+        result = conn.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id, jobs.c.status == models.RUNNING, jobs.c.attempt_id == body.attempt_id)
+            .values(updated_at=ts, heartbeat_at=ts, lease_expires_at=lease_expires_at)
+        )
+        if result.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+        conn.execute(
+            update(job_attempts)
+            .where(job_attempts.c.attempt_id == body.attempt_id)
+            .values(heartbeat_at=ts, lease_expires_at=lease_expires_at)
+        )
+        return {"ok": True, "cancel_requested": job["cancel_requested_at"] is not None}
 
 
 @app.post("/api/worker/jobs/{job_id}/logs", dependencies=[Depends(require_worker)])
@@ -276,12 +385,23 @@ def append_log(job_id: int, log: LogCreate):
         job = get_job(conn, job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job["status"] not in {models.QUEUED, models.RUNNING}:
-            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
-        conn.execute(
-            insert(job_logs).values(job_id=job_id, timestamp=ts, stream=log.stream, content=log.content)
+        require_active_attempt(job, log.attempt_id)
+        result = conn.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id, jobs.c.status == models.RUNNING, jobs.c.attempt_id == log.attempt_id)
+            .values(updated_at=ts)
         )
-        conn.execute(update(jobs).where(jobs.c.id == job_id).values(updated_at=ts))
+        if result.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+        conn.execute(
+            insert(job_logs).values(
+                job_id=job_id,
+                attempt_id=log.attempt_id,
+                timestamp=ts,
+                stream=log.stream,
+                content=log.content,
+            )
+        )
     return {"ok": True}
 
 
@@ -292,11 +412,25 @@ def complete_job(job_id: int, body: CompleteJob):
         job = get_job(conn, job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job["status"] != models.RUNNING:
-            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
-        conn.execute(
+        if job["status"] == models.COMPLETED and job["attempt_id"] == body.attempt_id:
+            return {"ok": True, "id": job_id, "status": models.COMPLETED}
+        require_active_attempt(job, body.attempt_id)
+        if job["cancel_requested_at"] is not None:
+            return cancel_running_attempt(
+                conn,
+                job,
+                CancelledJob(
+                    attempt_id=body.attempt_id,
+                    exit_code=130,
+                    final_summary=body.final_summary,
+                    receipt_json=body.receipt_json,
+                    git_diff=body.git_diff,
+                ),
+                ts,
+            )
+        result = conn.execute(
             update(jobs)
-            .where(jobs.c.id == job_id)
+            .where(jobs.c.id == job_id, jobs.c.status == models.RUNNING, jobs.c.attempt_id == body.attempt_id)
             .values(
                 status=models.COMPLETED,
                 exit_code=body.exit_code,
@@ -305,11 +439,21 @@ def complete_job(job_id: int, body: CompleteJob):
                 git_diff=body.git_diff,
                 updated_at=ts,
                 completed_at=ts,
+                heartbeat_at=ts,
+                lease_expires_at=None,
             )
+        )
+        if result.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+        conn.execute(
+            update(job_attempts)
+            .where(job_attempts.c.attempt_id == body.attempt_id)
+            .values(status=models.COMPLETED, exit_code=body.exit_code, heartbeat_at=ts, finished_at=ts)
         )
         conn.execute(
             insert(job_logs).values(
                 job_id=job_id,
+                attempt_id=body.attempt_id,
                 timestamp=ts,
                 stream="system",
                 content="Server accepted completed result",
@@ -325,11 +469,25 @@ def fail_job(job_id: int, body: FailJob):
         job = get_job(conn, job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job["status"] != models.RUNNING:
-            raise HTTPException(status_code=409, detail=f"Job is already {job['status']}")
-        conn.execute(
+        if job["status"] == models.FAILED and job["attempt_id"] == body.attempt_id:
+            return {"ok": True, "id": job_id, "status": models.FAILED}
+        require_active_attempt(job, body.attempt_id)
+        if job["cancel_requested_at"] is not None:
+            return cancel_running_attempt(
+                conn,
+                job,
+                CancelledJob(
+                    attempt_id=body.attempt_id,
+                    exit_code=body.exit_code,
+                    final_summary=body.final_summary,
+                    receipt_json=body.receipt_json,
+                    git_diff=body.git_diff,
+                ),
+                ts,
+            )
+        result = conn.execute(
             update(jobs)
-            .where(jobs.c.id == job_id)
+            .where(jobs.c.id == job_id, jobs.c.status == models.RUNNING, jobs.c.attempt_id == body.attempt_id)
             .values(
                 status=models.FAILED,
                 exit_code=body.exit_code,
@@ -339,14 +497,43 @@ def fail_job(job_id: int, body: FailJob):
                 git_diff=body.git_diff,
                 updated_at=ts,
                 completed_at=ts,
+                heartbeat_at=ts,
+                lease_expires_at=None,
+            )
+        )
+        if result.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Job attempt is no longer active")
+        conn.execute(
+            update(job_attempts)
+            .where(job_attempts.c.attempt_id == body.attempt_id)
+            .values(
+                status=models.FAILED,
+                exit_code=body.exit_code,
+                error_message=body.error_message,
+                heartbeat_at=ts,
+                finished_at=ts,
             )
         )
         conn.execute(
             insert(job_logs).values(
                 job_id=job_id,
+                attempt_id=body.attempt_id,
                 timestamp=ts,
                 stream="system",
                 content="Server accepted failed result",
             )
         )
         return {"ok": True, "id": job_id, "status": models.FAILED}
+
+
+@app.post("/api/worker/jobs/{job_id}/cancelled", dependencies=[Depends(require_worker)])
+def cancelled_job(job_id: int, body: CancelledJob):
+    ts = now_iso()
+    with connect() as conn:
+        job = get_job(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job["status"] == models.CANCELLED and job["attempt_id"] == body.attempt_id:
+            return {"ok": True, "id": job_id, "status": models.CANCELLED}
+        require_active_attempt(job, body.attempt_id)
+        return cancel_running_attempt(conn, job, body, ts)

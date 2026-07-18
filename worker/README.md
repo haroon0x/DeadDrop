@@ -1,42 +1,50 @@
-# DeadDrop Worker
+# DeadDrop worker
 
-Run local coding jobs from a trusted DeadDrop server.
+The worker polls a trusted DeadDrop server, runs one coding job at a time in an isolated Git worktree, verifies the result, and returns an authoritative receipt plus patch.
+
+Build:
 
 ```bash
-go run . run \
+go build -o deaddrop-worker .
+```
+
+Create a manifest:
+
+```bash
+./deaddrop-worker init \
+  --repo /absolute/path/to/project \
+  --verify "go test ./..."
+```
+
+Run:
+
+```bash
+./deaddrop-worker run \
   --server http://localhost:8000 \
   --token "$WORKER_TOKEN" \
-  --worker local \
-  --manifest deaddrop.manifest.example.json \
-  --agent mock
+  --manifest deaddrop.manifest.json \
+  --agent gemini
 ```
 
-Use `--agent gemini` for Gemini CLI or `--agent custom --command-template 'your-command "{{prompt}}"'`.
+The configured path must be a Git root or committed subdirectory. The source directory remains untouched. Each job runs from a detached worktree at source `HEAD`; dirty and untracked source files are excluded.
 
-Browser-created jobs route to `worker=local` and `repo_alias=default`. Use `--repo /path/to/workspace --repo-alias default` for one fixed workspace, or make the manifest entry use alias `default`.
+Agent modes:
 
-Each configured path can be any existing directory. Gemini runs with that directory as its working directory. If the workspace is inside a git worktree, DeadDrop captures `git status -- .` and `git diff -- .` scoped to that workspace; if not, git capture is skipped.
+- `gemini`: invokes Gemini CLI directly with JSON output
+- `custom`: invokes `sh -c` with `--command-template`
+- `mock`: deterministic E2E/demo agent for `app.py` and `test_app.py`
 
-Default Gemini command:
+Custom templates support `{{prompt}}`, `{{task}}`, and `{{repo}}`. Prompt and task values are redacted from local command logs.
+
+Repeat `--verify` to run trusted verification commands after the agent. Any failure fails the job. Changed files, verification status, and receipt status are worker-derived.
+
+The worker requires a structured agent receipt. It batches logs, renews attempt leases, handles running cancellation, kills timed-out or cancelled process groups, retries HTTP delivery, and durably replays terminal results before claiming more work.
+
+Run checks:
 
 ```bash
-gemini --skip-trust --approval-mode yolo --output-format json -p "{{prompt}}"
+go test ./...
+go vet ./...
 ```
 
-The built-in Gemini mode executes Gemini directly without a shell and redacts the prompt from live logs. `--command-template` still uses a shell for custom commands.
-
-Use `--agent-timeout 900` to control max agent runtime in seconds.
-
-Gemini should wrap its final answer with `DEADDROP_RECEIPT_JSON` and `DEADDROP_RECEIPT_JSON_END`. Content inside those markers must be valid JSON with `status`, `summary`, `changed_files`, `verification`, `blockers`, and `notes`. The worker renders that JSON as clean receipt sections and keeps raw stdout/stderr in live logs. If no receipt marker appears on a zero-exit run, the worker fails the job because DeadDrop needs a reliable receipt.
-
-Use `--run-once` for smoke tests or one-shot process managers. The worker registers workspaces, polls once, processes at most one job, reports completion/failure, and exits.
-
-Robustness checklist for future worker changes:
-
-- Always complete or fail a claimed job.
-- Stream logs but skip blank log content.
-- Keep command execution inside the resolved workspace.
-- Preserve `--agent-timeout`.
-- Preserve process-group killing on timeout so child processes do not survive the worker.
-- Capture final `git diff` even on failure when possible.
-- Do not add auto-commit behavior unless there is an explicit human accept step.
+See the root [README](../README.md), [Architecture](../docs/architecture.md), and [Worker service](../docs/worker-service.md).

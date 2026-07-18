@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +61,13 @@ DEADDROP_RECEIPT_JSON_END`
 	}
 	if !strings.Contains(receiptJSON, `"changed_files":["app.py"]`) {
 		t.Fatalf("expected normalized receipt json, got %q", receiptJSON)
+	}
+	authoritative, err := authoritativeReceiptJSON(receiptJSON, 0, []string{"actual.go"}, []Verification{{Command: "go test ./...", Status: "passed", Summary: "Worker observed exit code 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(authoritative, "app.py") || !strings.Contains(authoritative, `"changed_files":["actual.go"]`) || !strings.Contains(authoritative, `"command":"go test ./..."`) {
+		t.Fatalf("expected worker evidence to replace agent claims, got %q", authoritative)
 	}
 }
 
@@ -239,6 +247,83 @@ func TestParseConfigRunOnce(t *testing.T) {
 	}
 	if !cfg.RunOnce {
 		t.Fatal("expected run-once to be enabled")
+	}
+}
+
+func TestInitManifestCreatesRunnableConfig(t *testing.T) {
+	repo := t.TempDir()
+	runTestCommand(t, repo, "git", "init")
+	output := filepath.Join(t.TempDir(), "manifest.json")
+	if err := initManifest([]string{"--repo", repo, "--output", output, "--verify", "go test ./..."}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Repos []RepoConfig `json:"repos"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Repos) != 1 || manifest.Repos[0].Alias != "default" || manifest.Repos[0].Path != repo || strings.Join(manifest.Repos[0].Verify, ",") != "go test ./..." {
+		t.Fatalf("unexpected manifest %+v", manifest.Repos)
+	}
+}
+
+func TestJobWorkspaceCapturesPatchWithoutChangingSource(t *testing.T) {
+	dir := t.TempDir()
+	runTestCommand(t, dir, "git", "init")
+	runTestCommand(t, dir, "git", "config", "user.email", "test@example.com")
+	runTestCommand(t, dir, "git", "config", "user.name", "Test")
+	configuredPath := filepath.Join(dir, "project")
+	if err := os.Mkdir(configuredPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(configuredPath, "app.txt")
+	if err := os.WriteFile(sourcePath, []byte("before\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runTestCommand(t, dir, "git", "add", "project/app.txt")
+	runTestCommand(t, dir, "git", "commit", "-m", "baseline")
+
+	workspace, err := prepareJobWorkspace(configuredPath, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := cleanupJobWorkspace(workspace); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := os.WriteFile(filepath.Join(workspace.WorkspacePath, "app.txt"), []byte("after\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace.WorkspacePath, "new.txt"), []byte("new\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	diff, err := captureGitDiff(workspace.WorkspacePath, workspace.BaseCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff, "+after") || !strings.Contains(diff, "new.txt") {
+		t.Fatalf("expected tracked and untracked changes in patch, got %q", diff)
+	}
+	changedFiles, err := captureChangedFiles(workspace.WorkspacePath, workspace.BaseCommit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(changedFiles, ",") != "app.txt,new.txt" {
+		t.Fatalf("unexpected changed files %v", changedFiles)
+	}
+	source, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(source) != "before\n" {
+		t.Fatalf("source workspace changed: %q", source)
 	}
 }
 

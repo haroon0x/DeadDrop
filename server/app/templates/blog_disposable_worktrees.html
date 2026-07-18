@@ -1,0 +1,54 @@
+{% extends "public_base.html" %}
+{% block title %}Why every coding-agent job gets a disposable worktree · DeadDrop{% endblock %}
+{% block content %}
+<article class="prose-article">
+  <header>
+    <a class="back-link" href="/blog">← All writing</a>
+    <p class="eyebrow">Isolation · 7 min</p>
+    <h1>Why every coding-agent job gets a disposable worktree</h1>
+    <p class="article-deck">A Git repository is valuable state, not an execution sandbox. DeadDrop protects the former without pretending it protects the whole machine.</p>
+  </header>
+
+  <p>Most coding-agent demos begin with the same innocent instruction: change into a project directory and let the model work. That is also where the developer may have half-finished edits, untracked notes, generated files, credentials ignored by Git, and a branch whose exact state matters. Running an unattended process there turns ordinary local state into an accidental shared workspace.</p>
+
+  <p>The problem is not that agents always destroy work. The problem is that the failure boundary is vague. A successful run may incorporate a local edit the task never saw. A failed run may leave a mix of useful changes and partial experiments. A diff against the current index may omit a new file or confuse pre-existing work with agent output.</p>
+
+  <h2>Choose a baseline before execution</h2>
+
+  <p>DeadDrop resolves the repository root and current <code>HEAD</code> before the agent starts. That commit is the job baseline. It then creates a detached Git worktree in a temporary directory and runs the agent there.</p>
+
+  <pre><code>git rev-parse --show-toplevel
+git rev-parse HEAD
+git worktree add --detach /tmp/deaddrop-job/workspace &lt;baseline&gt;</code></pre>
+
+  <p>This makes a useful promise: the job sees committed source at a known commit. Dirty tracked files and untracked files in the developer's working directory are not copied. If the configured workspace is a committed subdirectory, the worker creates the repository-level worktree and places the agent in the corresponding subdirectory.</p>
+
+  <aside><strong>The source workspace is not a rollback target.</strong> DeadDrop does not edit it, so it does not need to guess how to restore it.</aside>
+
+  <h2>Capture a complete, scoped patch</h2>
+
+  <p>After the agent and verification commands finish, the worker stages changes only inside the temporary worktree. Staging is an observation technique here, not a step toward committing. It makes tracked edits, deletions, and new files visible to one baseline-relative diff.</p>
+
+  <pre><code>git add -A -- .
+git diff --binary --relative &lt;baseline&gt; -- .
+git diff --name-only --relative -z &lt;baseline&gt; -- .</code></pre>
+
+  <p>The binary flag preserves non-text changes. The relative flag keeps patch paths scoped to the configured workspace. NUL-delimited file names avoid treating whitespace as structure. If an agent created commits in the detached worktree despite being asked not to, comparing against the original baseline still captures them.</p>
+
+  <h2>Cleanup is part of correctness</h2>
+
+  <p>The temporary worktree is removed after patch capture, whether the job completes, fails, times out, or is cancelled. This prevents abandoned worktrees from accumulating Git administrative records and disk usage. Cleanup errors are logged because a result without operational evidence is harder to trust.</p>
+
+  <h2>What this does not isolate</h2>
+
+  <p>A worktree is a repository-state boundary. It is not a container, virtual machine, permission boundary, or network sandbox. The agent still inherits the worker user's access to the rest of the filesystem, local tools, environment, credentials, and network.</p>
+
+  <p>That distinction matters. Saying “isolated” without naming the protected resource encourages unsafe assumptions. DeadDrop isolates the source Git state. Operators still need a dedicated non-root user, intentionally limited credentials, and a manifest containing only repositories the agent may access.</p>
+
+  <h2>The practical result</h2>
+
+  <p>A coding task can be asynchronous without making the developer's current checkout disposable. The agent gets a clean, deterministic baseline. The human gets a complete patch. The source directory remains exactly as it was—including the messy local work that made isolation necessary in the first place.</p>
+
+  <footer><a href="/blog/evidence-based-receipts">Next: A receipt should be evidence, not agent prose →</a></footer>
+</article>
+{% endblock %}

@@ -11,7 +11,8 @@ os.environ["SECURE_COOKIES"] = "false"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.main import app  # noqa: E402
-from app.db import init_db, reset_engine_for_tests  # noqa: E402
+from app.db import connect, init_db, jobs, reset_engine_for_tests  # noqa: E402
+from sqlalchemy import update
 
 
 def client():
@@ -68,18 +69,19 @@ def test_create_job_and_worker_flow():
     assert next_job.status_code == 200
     assert next_job.json()["id"] == job_id
     assert next_job.json()["status"] == "running"
+    attempt_id = next_job.json()["attempt_id"]
 
     log = c.post(
         f"/api/worker/jobs/{job_id}/logs",
         headers=worker_headers(),
-        json={"stream": "system", "content": "Picked up job"},
+        json={"attempt_id": attempt_id, "stream": "system", "content": "Picked up job"},
     )
     assert log.status_code == 200
 
     complete = c.post(
         f"/api/worker/jobs/{job_id}/complete",
         headers=worker_headers(),
-        json={"exit_code": 0, "final_summary": "Fixed", "git_diff": "diff --git"},
+        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Fixed", "git_diff": "diff --git"},
     )
     assert complete.status_code == 200
     body = complete.json()
@@ -131,6 +133,7 @@ def test_structured_receipt_renders_as_sections():
     next_job = c.get("/api/worker/next?worker_name=local", headers=worker_headers())
     assert next_job.status_code == 200
     assert next_job.json()["id"] == job_id
+    attempt_id = next_job.json()["attempt_id"]
     receipt_json = (
         '{"status":"completed","summary":"Fixed the parser.",'
         '"changed_files":["parser.py"],'
@@ -140,7 +143,7 @@ def test_structured_receipt_renders_as_sections():
     complete = c.post(
         f"/api/worker/jobs/{job_id}/complete",
         headers=worker_headers(),
-        json={"exit_code": 0, "final_summary": "Fixed the parser.", "receipt_json": receipt_json, "git_diff": ""},
+        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Fixed the parser.", "receipt_json": receipt_json, "git_diff": ""},
     )
     assert complete.status_code == 200
 
@@ -162,8 +165,8 @@ def test_browser_auth_uses_persistent_cookie_not_query_token():
     c = client()
     query_res = c.get("/?token=owner_test", follow_redirects=False)
     assert query_res.status_code == 200
-    assert "Leave a coding task" in query_res.text
-    assert "Mission queue" not in query_res.text
+    assert "Leave a task." in query_res.text
+    assert "Your local-agent task queue" not in query_res.text
 
     login = c.post("/login", data={"token": "owner_test"}, follow_redirects=False)
     assert login.status_code == 303
@@ -174,7 +177,7 @@ def test_browser_auth_uses_persistent_cookie_not_query_token():
     # Verify we can access dashboard with the cookies
     res = c.get("/", cookies=cookies)
     assert res.status_code == 200
-    assert "Mission queue" in res.text
+    assert "Your local-agent task queue" in res.text
 
 
 def test_queued_job_can_be_cancelled_from_page():
@@ -214,11 +217,13 @@ def test_job_logs_are_paginated():
         json={"title": "Logs", "prompt": "Emit logs"},
     )
     job_id = create.json()["id"]
+    next_job = c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    attempt_id = next_job.json()["attempt_id"]
     for i in range(205):
         c.post(
             f"/api/worker/jobs/{job_id}/logs",
             headers=worker_headers(),
-            json={"stream": "stdout", "content": f"log {i}"},
+            json={"attempt_id": attempt_id, "stream": "stdout", "content": f"log {i}"},
         )
 
     latest = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
@@ -244,24 +249,32 @@ def test_worker_cannot_overwrite_terminal_job_state():
         json={"title": "Terminal", "prompt": "No-op"},
     )
     job_id = create.json()["id"]
-    c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    next_job = c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    attempt_id = next_job.json()["attempt_id"]
     complete = c.post(
         f"/api/worker/jobs/{job_id}/complete",
         headers=worker_headers(),
-        json={"exit_code": 0, "final_summary": "Done"},
+        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Done"},
     )
     assert complete.status_code == 200
+
+    replay = c.post(
+        f"/api/worker/jobs/{job_id}/complete",
+        headers=worker_headers(),
+        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Done"},
+    )
+    assert replay.status_code == 200
 
     overwrite = c.post(
         f"/api/worker/jobs/{job_id}/fail",
         headers=worker_headers(),
-        json={"exit_code": 1, "error_message": "overwrite"},
+        json={"attempt_id": attempt_id, "exit_code": 1, "error_message": "overwrite"},
     )
     assert overwrite.status_code == 409
     late_log = c.post(
         f"/api/worker/jobs/{job_id}/logs",
         headers=worker_headers(),
-        json={"stream": "system", "content": "late"},
+        json={"attempt_id": attempt_id, "stream": "system", "content": "late"},
     )
     assert late_log.status_code == 409
     fetched = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
@@ -276,9 +289,90 @@ def test_large_worker_payloads_are_rejected():
         json={"title": "Large", "prompt": "No-op"},
     )
     job_id = create.json()["id"]
+    next_job = c.get("/api/worker/next?worker_name=local", headers=worker_headers())
+    attempt_id = next_job.json()["attempt_id"]
     too_large_log = c.post(
         f"/api/worker/jobs/{job_id}/logs",
         headers=worker_headers(),
-        json={"stream": "system", "content": "x" * 20001},
+        json={"attempt_id": attempt_id, "stream": "system", "content": "x" * 20001},
     )
     assert too_large_log.status_code == 422
+
+
+def test_running_job_cancellation_reaches_worker_attempt():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Cancel running", "prompt": "Wait"},
+    )
+    job_id = create.json()["id"]
+    claimed = c.get("/api/worker/next?worker_name=local", headers=worker_headers()).json()
+    attempt_id = claimed["attempt_id"]
+
+    cancel = c.post(f"/api/jobs/{job_id}/cancel", headers=owner_headers())
+    assert cancel.status_code == 200
+    assert cancel.json()["status"] == "running"
+    assert cancel.json()["cancel_requested_at"] is not None
+
+    heartbeat = c.post(
+        f"/api/worker/jobs/{job_id}/heartbeat",
+        headers=worker_headers(),
+        json={"attempt_id": attempt_id},
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["cancel_requested"] is True
+
+    cancelled = c.post(
+        f"/api/worker/jobs/{job_id}/cancelled",
+        headers=worker_headers(),
+        json={"attempt_id": attempt_id, "exit_code": 130, "final_summary": "Cancelled"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+
+def test_stale_job_is_reissued_with_new_attempt():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Recover", "prompt": "Wait"},
+    )
+    job_id = create.json()["id"]
+    first = c.get("/api/worker/next?worker_name=local", headers=worker_headers()).json()
+    with connect() as conn:
+        conn.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id)
+            .values(lease_expires_at="2000-01-01T00:00:00+00:00")
+        )
+
+    second = c.get("/api/worker/next?worker_name=local", headers=worker_headers()).json()
+    assert second["id"] == job_id
+    assert second["attempt_number"] == 2
+    assert second["attempt_id"] != first["attempt_id"]
+
+    stale_heartbeat = c.post(
+        f"/api/worker/jobs/{job_id}/heartbeat",
+        headers=worker_headers(),
+        json={"attempt_id": first["attempt_id"]},
+    )
+    assert stale_heartbeat.status_code == 409
+
+
+def test_public_project_pages_render():
+    c = client()
+    pages = {
+        "/docs": "From zero to a verified local-agent queue",
+        "/docs/architecture": "The server coordinates. The worker proves.",
+        "/updates": "Building the boring parts",
+        "/blog": "Notes on building agent infrastructure",
+        "/blog/disposable-worktrees": "Why every coding-agent job gets a disposable worktree",
+        "/blog/evidence-based-receipts": "A receipt should be evidence, not agent prose",
+        "/blog/leases-for-local-agents": "Leases make local agents recoverable",
+    }
+    for path, heading in pages.items():
+        response = c.get(path)
+        assert response.status_code == 200
+        assert heading in response.text

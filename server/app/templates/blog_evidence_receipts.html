@@ -1,0 +1,63 @@
+{% extends "public_base.html" %}
+{% block title %}A receipt should be evidence, not agent prose · DeadDrop{% endblock %}
+{% block content %}
+<article class="prose-article">
+  <header>
+    <a class="back-link" href="/blog">← All writing</a>
+    <p class="eyebrow">Receipts · 6 min</p>
+    <h1>A receipt should be evidence, not agent prose</h1>
+    <p class="article-deck">Agent summaries are useful. Agent claims about files, tests, and success are not enough to operate a reliable queue.</p>
+  </header>
+
+  <p>When a coding agent finishes, it naturally explains what it believes it did. That explanation is valuable: it can describe intent, tradeoffs, blockers, and decisions that are not obvious from a patch. It is also produced by the same fallible process that made the change.</p>
+
+  <p>If a job system copies that explanation directly into “changed files” and “tests passed,” it turns a narrative into an audit record. The interface looks structured, but the underlying trust model has not improved.</p>
+
+  <h2>Split subjective and observable fields</h2>
+
+  <p>DeadDrop asks the agent for a structured JSON receipt with a summary, notes, blockers, changed files, verification, and status. The worker validates the shape, then deliberately replaces the fields it can observe.</p>
+
+  <div class="article-table">
+    <div><strong>Field</strong><strong>Authority</strong></div>
+    <div><span>Summary</span><span>Agent</span></div>
+    <div><span>Notes and blockers</span><span>Agent</span></div>
+    <div><span>Changed files</span><span>Git diff</span></div>
+    <div><span>Verification</span><span>Worker commands</span></div>
+    <div><span>Status</span><span>Observed exit state</span></div>
+  </div>
+
+  <p>This keeps the best part of agent output—the explanation—without asking it to certify itself.</p>
+
+  <h2>Git is the changed-file authority</h2>
+
+  <p>The worker already has a job baseline and isolated worktree. It can ask Git which paths differ from that baseline. That answer includes files the agent forgot to mention and excludes files it claimed to change but did not.</p>
+
+  <p>The same principle applies to the patch. The dashboard does not reconstruct edits from a model response. It stores the binary Git diff produced after execution.</p>
+
+  <h2>Verification must be configured outside the prompt</h2>
+
+  <p>A prompt can ask an agent to run tests, but the worker cannot infer which command is authoritative for every repository. The manifest therefore accepts trusted verification commands:</p>
+
+  <pre><code>{
+  "alias": "default",
+  "path": "/projects/api",
+  "verify": ["pytest -q", "ruff check ."]
+}</code></pre>
+
+  <p>The worker runs those commands after the agent in the same isolated workspace. It records the exact command, pass or fail status, and observed exit code. Any failure fails the job. If no commands are configured, the receipt says no verification was reported instead of preserving an agent's unsupported claim.</p>
+
+  <aside><strong>Configuration is a trust boundary.</strong> Verification commands are local operator input and can execute arbitrary code. They do not come from the remote task.</aside>
+
+  <h2>Status is an outcome, not a tone</h2>
+
+  <p>An agent may sound confident after a non-zero exit, or produce a valid receipt before a later verification failure. The worker sets receipt status from the final observed state: completed for zero, cancelled for the cancellation path, and failed otherwise.</p>
+
+  <p>A zero-exit agent that omits a valid structured receipt also fails. That rule prevents silent degradation into an unstructured output blob that the interface cannot interpret honestly.</p>
+
+  <h2>Receipts become useful when fields have provenance</h2>
+
+  <p>The goal is not to distrust every sentence an agent writes. It is to avoid asking one source to be both actor and auditor. Summaries explain. Git enumerates. Commands verify. Process state decides. A receipt becomes credible when each field comes from the narrowest authority capable of producing it.</p>
+
+  <footer><a href="/blog/leases-for-local-agents">Next: Leases make local agents recoverable →</a></footer>
+</article>
+{% endblock %}

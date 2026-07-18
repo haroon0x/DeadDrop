@@ -1,10 +1,13 @@
 import json
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import (
     Column,
     ForeignKey,
@@ -50,12 +53,35 @@ jobs = Table(
     Column("updated_at", Text, nullable=False),
     Column("started_at", Text),
     Column("completed_at", Text),
+    Column("attempt_id", String(36)),
+    Column("attempt_number", Integer, nullable=False, default=0),
+    Column("lease_expires_at", Text),
+    Column("heartbeat_at", Text),
+    Column("cancel_requested_at", Text),
     Column("error_message", Text),
     Column("final_summary", Text),
     Column("receipt_json", Text),
     Column("git_diff", Text),
     Column("exit_code", Integer),
     Index("idx_jobs_status_worker", "status", "worker_name", "created_at"),
+    Index("idx_jobs_lease", "status", "lease_expires_at"),
+)
+
+job_attempts = Table(
+    "job_attempts",
+    metadata,
+    Column("attempt_id", String(36), primary_key=True),
+    Column("job_id", Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
+    Column("attempt_number", Integer, nullable=False),
+    Column("worker_name", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("started_at", Text, nullable=False),
+    Column("heartbeat_at", Text, nullable=False),
+    Column("lease_expires_at", Text, nullable=False),
+    Column("finished_at", Text),
+    Column("exit_code", Integer),
+    Column("error_message", Text),
+    Index("idx_job_attempts_job", "job_id", "attempt_number"),
 )
 
 job_logs = Table(
@@ -64,6 +90,7 @@ job_logs = Table(
     Column("id", Integer, primary_key=True),
     Column("job_id", Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
     Column("timestamp", Text, nullable=False),
+    Column("attempt_id", String(36)),
     Column("stream", Text, nullable=False),
     Column("content", Text, nullable=False),
     Index("idx_logs_job", "job_id", "id"),
@@ -88,6 +115,10 @@ _engine_url: str | None = None
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def lease_expires_iso(seconds: int = 60) -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
 
 
 def database_url() -> str:
@@ -122,17 +153,20 @@ def connect():
 
 
 def init_db() -> None:
-    metadata.create_all(engine())
-    ensure_schema()
+    config = migration_config()
+    with engine().connect() as conn:
+        tables = set(conn.dialect.get_table_names(conn))
+    if "jobs" in tables and "alembic_version" not in tables:
+        command.stamp(config, "0001")
+    command.upgrade(config, "head")
 
 
-def ensure_schema() -> None:
-    with engine().begin() as conn:
-        columns = {row["name"] for row in conn.execute(text("SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'jobs'")).mappings()} if conn.dialect.name != "sqlite" else {
-            row["name"] for row in conn.execute(text("PRAGMA table_info(jobs)")).mappings()
-        }
-        if "receipt_json" not in columns:
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN receipt_json TEXT"))
+def migration_config() -> Config:
+    server_dir = Path(__file__).resolve().parents[1]
+    config = Config(server_dir / "alembic.ini")
+    config.set_main_option("script_location", str(server_dir / "migrations"))
+    config.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
+    return config
 
 
 def reset_engine_for_tests() -> None:
@@ -213,8 +247,9 @@ def create_job_record(conn: Connection, values: dict[str, Any]) -> int:
 
 
 def claim_next_job(conn: Connection, worker_name: str, ts: str) -> dict[str, Any] | None:
+    recover_stale_jobs(conn, ts)
     row = conn.execute(
-        select(jobs.c.id)
+        select(jobs.c.id, jobs.c.attempt_number)
         .where(jobs.c.status == "queued", jobs.c.worker_name == worker_name)
         .order_by(jobs.c.created_at, jobs.c.id)
         .limit(1)
@@ -223,12 +258,77 @@ def claim_next_job(conn: Connection, worker_name: str, ts: str) -> dict[str, Any
     if not row:
         return None
     job_id = int(row.id)
-    conn.execute(
+    attempt_id = str(uuid4())
+    attempt_number = int(row.attempt_number or 0) + 1
+    lease_expires_at = lease_expires_iso()
+    result = conn.execute(
         update(jobs)
         .where(jobs.c.id == job_id, jobs.c.status == "queued")
-        .values(status="running", started_at=ts, updated_at=ts)
+        .values(
+            status="running",
+            started_at=ts,
+            updated_at=ts,
+            attempt_id=attempt_id,
+            attempt_number=attempt_number,
+            heartbeat_at=ts,
+            lease_expires_at=lease_expires_at,
+            cancel_requested_at=None,
+            completed_at=None,
+        )
+    )
+    if result.rowcount != 1:
+        return None
+    conn.execute(
+        insert(job_attempts).values(
+            attempt_id=attempt_id,
+            job_id=job_id,
+            attempt_number=attempt_number,
+            worker_name=worker_name,
+            status="running",
+            started_at=ts,
+            heartbeat_at=ts,
+            lease_expires_at=lease_expires_at,
+        )
     )
     return get_job(conn, job_id, include_logs=False)
+
+
+def recover_stale_jobs(conn: Connection, ts: str) -> int:
+    stale = conn.execute(
+        select(jobs.c.id, jobs.c.attempt_id, jobs.c.cancel_requested_at)
+        .where(jobs.c.status == "running", jobs.c.lease_expires_at < ts)
+    ).all()
+    recovered = 0
+    for row in stale:
+        cancelled = row.cancel_requested_at is not None
+        status = "cancelled" if cancelled else "queued"
+        values: dict[str, Any] = {
+            "status": status,
+            "updated_at": ts,
+            "attempt_id": None,
+            "heartbeat_at": None,
+            "lease_expires_at": None,
+        }
+        if cancelled:
+            values["completed_at"] = ts
+        result = conn.execute(
+            update(jobs)
+            .where(jobs.c.id == row.id, jobs.c.status == "running", jobs.c.attempt_id == row.attempt_id)
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            continue
+        conn.execute(
+            update(job_attempts)
+            .where(job_attempts.c.attempt_id == row.attempt_id)
+            .values(
+                status="cancelled" if cancelled else "lost",
+                finished_at=ts,
+                error_message="Worker lease expired",
+            )
+        )
+        recovered += 1
+    return recovered
 
 
 def touch_worker(conn: Connection, name: str) -> None:
@@ -281,6 +381,7 @@ def upsert_worker_repo(conn: Connection, worker_name: str, repo_alias: str, disp
 def delete_all_for_tests() -> None:
     with connect() as conn:
         conn.execute(delete(job_logs))
+        conn.execute(delete(job_attempts))
         conn.execute(delete(jobs))
         conn.execute(delete(worker_repos))
         conn.execute(delete(workers))

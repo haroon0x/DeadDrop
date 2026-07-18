@@ -1,28 +1,34 @@
-{% extends "base.html" %}
-{% block title %}DeadDrop Demo{% endblock %}
+{% extends "public_base.html" %}
+{% block title %}Demo receipt · DeadDrop{% endblock %}
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">Reviewer-safe demo</p>
-  <h1>Completed job without touching a real PC.</h1>
+<section class="page-hero">
+  <p class="eyebrow">Demo receipt</p>
+  <h1>See the evidence before running a worker.</h1>
+  <p>This static example shows the shape of a completed DeadDrop job.</p>
 </section>
-<section class="panel">
-  <h2>Receipt</h2>
-  <dl class="facts">
-    <div><dt>Status</dt><dd><span class="badge completed">completed</span></dd></div>
-    <div><dt>Worker</dt><dd>local</dd></div>
-    <div><dt>Repo</dt><dd>default</dd></div>
-  </dl>
-  <pre class="summary">Changed app.py so add(2, 3) returns 5. Ran pytest. Review diff before commit.</pre>
-</section>
-<section class="panel">
-  <h2>Live logs</h2>
-  <pre class="logs"><span class="system">[demo] system: Picked up job</span>
-<span class="stdout">[demo] stdout: pytest found failing test_add</span>
-<span class="system">[demo] system: Applied mock fix</span></pre>
-</section>
-<section class="panel">
-  <h2>Git diff</h2>
-  <pre class="diff">-    return a - b
-+    return a + b</pre>
+
+<section class="public-section">
+  <div class="job-head">
+    <div><p class="eyebrow">Job #184</p><h1>Fix the failing add test</h1></div>
+    <span class="badge completed">completed</span>
+  </div>
+  <section class="panel">
+    <h2>Receipt</h2>
+    <div class="receipt-grid">
+      <article class="receipt-card result-card"><span class="receipt-label">Result</span><h3>Corrected the add implementation and verified the focused test suite.</h3><p class="muted">The source workspace was not modified.</p></article>
+      <article class="receipt-card"><span class="receipt-label">Changed files</span><ul class="receipt-list"><li>app.py</li></ul></article>
+      <article class="receipt-card"><span class="receipt-label">Verification</span><ul class="receipt-list"><li><strong>python -m pytest</strong> <span class="badge passed">passed</span><br>Worker observed exit code 0</li></ul></article>
+    </div>
+  </section>
+  <section class="panel"><details class="log-details" open><summary>Live logs</summary><pre class="logs"><span class="system">system: Created isolated Git worktree</span>
+<span class="stdout">stdout: test_app.py . [100%]</span>
+<span class="system">system: Reporting completed result</span></pre></details></section>
+  <section class="panel"><details class="log-details" open><summary>Git diff</summary><pre class="diff">diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,2 +1,2 @@
+ def add(a, b):
+-    return a - b
++    return a + b</pre></details></section>
 </section>
 {% endblock %}

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -26,8 +25,17 @@ type RunResult struct {
 }
 
 type CommandResult struct {
-	ExitCode int
-	Output   string
+	ExitCode     int
+	Output       string
+	Verification []Verification
+}
+
+type JobWorkspace struct {
+	SourceRoot    string
+	TempRoot      string
+	WorktreeRoot  string
+	WorkspacePath string
+	BaseCommit    string
 }
 
 type GeminiJSONOutput struct {
@@ -36,7 +44,7 @@ type GeminiJSONOutput struct {
 	Error    json.RawMessage `json:"error"`
 }
 
-func runJob(cfg Config, c Client, job Job) RunResult {
+func runJob(ctx context.Context, cfg Config, c Client, job Job) RunResult {
 	c.Log(job.ID, "system", "Picked up job")
 	repo, ok := cfg.Repos[job.RepoAlias]
 	if !ok {
@@ -46,31 +54,67 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 	if err := validateWorkspace(repo.Path); err != nil {
 		return finish(cfg, c, job.ID, 1, err.Error(), err.Error())
 	}
-	c.Log(job.ID, "system", "Inspecting workspace")
-	logGitStatus(repo.Path, c, job.ID)
+	c.Log(job.ID, "system", "Source workspace state is not included in the isolated job")
+	logGitStatus(ctx, repo.Path, c, job.ID)
+	workspace, err := prepareJobWorkspace(repo.Path, job.ID)
+	if err != nil {
+		return finish(cfg, c, job.ID, 1, err.Error(), err.Error())
+	}
+	defer func() {
+		if cleanupErr := cleanupJobWorkspace(workspace); cleanupErr != nil {
+			c.Log(job.ID, "stderr", cleanupErr.Error())
+		}
+	}()
+	repo.Path = workspace.WorkspacePath
+	c.Log(job.ID, "system", "Created isolated Git worktree at commit "+workspace.BaseCommit)
+	c.Log(job.ID, "system", "Inspecting isolated workspace")
+	logGitStatus(ctx, repo.Path, c, job.ID)
 	prompt := buildPrompt(repo.Path, repo.Alias, job.Prompt)
 
 	var command CommandResult
-	var err error
+	err = nil
 	switch cfg.Agent {
 	case "mock":
-		command, err = runMock(cfg, repo, c, job.ID)
+		command, err = runMock(ctx, cfg, repo, c, job.ID)
 	case "gemini":
 		if cfg.CommandTemplate == "" {
-			command, err = runGemini(cfg, repo, c, job.ID, prompt)
+			command, err = runGemini(ctx, cfg, repo, c, job.ID, prompt)
 		} else {
-			command, err = runTemplate(cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
+			command, err = runTemplate(ctx, cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
 		}
 	case "custom":
 		if cfg.CommandTemplate == "" {
 			return finish(cfg, c, job.ID, 1, "--command-template is required for custom agent", "")
 		}
-		command, err = runTemplate(cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
+		command, err = runTemplate(ctx, cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
 	default:
 		return finish(cfg, c, job.ID, 1, "unknown agent mode: "+cfg.Agent, "")
 	}
+	if err == nil && command.ExitCode == 0 && len(repo.Verify) > 0 {
+		checks, verifyCode, verifyErr := runVerification(ctx, cfg, repo, c, job.ID)
+		command.Verification = checks
+		if verifyErr != nil {
+			err = verifyErr
+			command.ExitCode = verifyCode
+		}
+	}
 
-	diff := captureGitDiff(repo.Path)
+	diff, diffErr := captureGitDiff(repo.Path, workspace.BaseCommit)
+	if diffErr != nil {
+		c.Log(job.ID, "stderr", diffErr.Error())
+		if err == nil {
+			err = diffErr
+			command.ExitCode = 2
+		}
+	}
+	changedFiles, changedFilesErr := captureChangedFiles(repo.Path, workspace.BaseCommit)
+	if changedFilesErr != nil {
+		c.Log(job.ID, "stderr", changedFilesErr.Error())
+		if err == nil {
+			err = changedFilesErr
+			command.ExitCode = 2
+		}
+	}
 	status := captureGitStatus(repo.Path)
 	c.Log(job.ID, "system", "Final git status:\n"+status)
 	receiptSource := command.Output
@@ -84,6 +128,14 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 		}
 	}
 	summary, receiptJSON, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, receiptSource)
+	if receiptJSON != "" {
+		var receiptErr error
+		receiptJSON, receiptErr = authoritativeReceiptJSON(receiptJSON, command.ExitCode, changedFiles, command.Verification)
+		if receiptErr != nil && err == nil {
+			err = receiptErr
+			command.ExitCode = 2
+		}
+	}
 	if !hasReceipt && err == nil {
 		err = fmt.Errorf("agent command exited 0, but final structured receipt JSON was missing or invalid")
 		command.ExitCode = 2
@@ -93,6 +145,86 @@ func runJob(cfg Config, c Client, job Job) RunResult {
 		return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff, Err: err}
 	}
 	return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff}
+}
+
+func prepareJobWorkspace(path string, jobID int) (JobWorkspace, error) {
+	root, err := gitRoot(path)
+	if err != nil {
+		return JobWorkspace{}, fmt.Errorf("configured workspace must be a Git worktree: %w", err)
+	}
+	configured, err := canonicalPath(path)
+	if err != nil {
+		return JobWorkspace{}, fmt.Errorf("resolve configured workspace: %w", err)
+	}
+	canonicalRoot, err := canonicalPath(root)
+	if err != nil {
+		return JobWorkspace{}, fmt.Errorf("resolve Git worktree root: %w", err)
+	}
+	relativePath, err := filepath.Rel(canonicalRoot, configured)
+	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		return JobWorkspace{}, fmt.Errorf("configured workspace is outside Git worktree root: configured %s, root %s", configured, canonicalRoot)
+	}
+	baseCommit, err := gitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		return JobWorkspace{}, fmt.Errorf("resolve workspace HEAD: %w", err)
+	}
+	tempRoot, err := os.MkdirTemp("", fmt.Sprintf("deaddrop-job-%d-", jobID))
+	if err != nil {
+		return JobWorkspace{}, fmt.Errorf("create isolated workspace directory: %w", err)
+	}
+	worktreeRoot := filepath.Join(tempRoot, "workspace")
+	cmd := exec.Command("git", "worktree", "add", "--detach", worktreeRoot, baseCommit)
+	cmd.Dir = root
+	if output, commandErr := cmd.CombinedOutput(); commandErr != nil {
+		_ = os.RemoveAll(tempRoot)
+		return JobWorkspace{}, fmt.Errorf("create isolated Git worktree: %w: %s", commandErr, strings.TrimSpace(string(output)))
+	}
+	workspacePath := filepath.Join(worktreeRoot, relativePath)
+	if info, statErr := os.Stat(workspacePath); statErr != nil || !info.IsDir() {
+		_ = exec.Command("git", "-C", root, "worktree", "remove", "--force", worktreeRoot).Run()
+		_ = os.RemoveAll(tempRoot)
+		if statErr != nil {
+			return JobWorkspace{}, fmt.Errorf("configured workspace is not present at HEAD: %w", statErr)
+		}
+		return JobWorkspace{}, fmt.Errorf("configured workspace is not a directory at HEAD")
+	}
+	return JobWorkspace{SourceRoot: root, TempRoot: tempRoot, WorktreeRoot: worktreeRoot, WorkspacePath: workspacePath, BaseCommit: baseCommit}, nil
+}
+
+func cleanupJobWorkspace(workspace JobWorkspace) error {
+	cmd := exec.Command("git", "worktree", "remove", "--force", workspace.WorktreeRoot)
+	cmd.Dir = workspace.SourceRoot
+	output, err := cmd.CombinedOutput()
+	removeErr := os.RemoveAll(workspace.TempRoot)
+	if err != nil {
+		return fmt.Errorf("remove isolated Git worktree: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if removeErr != nil {
+		return fmt.Errorf("remove isolated workspace directory: %w", removeErr)
+	}
+	return nil
+}
+
+func canonicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
+func gitRoot(dir string) (string, error) {
+	return gitOutput(dir, "rev-parse", "--show-toplevel")
+}
+
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s failed: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func finish(cfg Config, c Client, jobID, code int, message, summary string) RunResult {
@@ -167,11 +299,14 @@ Rules:
 `, alias, repo, task)
 }
 
-func runMock(cfg Config, repo RepoConfig, c Client, jobID int) (CommandResult, error) {
+func runMock(ctx context.Context, cfg Config, repo RepoConfig, c Client, jobID int) (CommandResult, error) {
 	c.Log(jobID, "system", "Mock agent: inspecting repo")
 	if _, err := os.Stat(filepath.Join(repo.Path, "test_app.py")); err == nil {
 		c.Log(jobID, "system", "Mock agent: running tests")
-		runPythonModule(repo.Path, c, jobID, "pytest")
+		initial, initialErr := runPythonModule(ctx, repo.Path, c, jobID, "pytest")
+		if ctx.Err() != nil {
+			return initial, initialErr
+		}
 	}
 	appPath := filepath.Join(repo.Path, "app.py")
 	data, err := os.ReadFile(appPath)
@@ -191,27 +326,56 @@ func runMock(cfg Config, repo RepoConfig, c Client, jobID int) (CommandResult, e
 		}
 	}
 	c.Log(jobID, "system", "Mock agent: running verification")
-	verify, err := runPythonModule(repo.Path, c, jobID, "pytest")
+	verify, err := runPythonModule(ctx, repo.Path, c, jobID, "pytest")
 	verify.Output += "\n" + mockReceipt(changed)
+	verify.Verification = []Verification{{Command: "python -m pytest", Status: verificationStatus(verify.ExitCode), Summary: fmt.Sprintf("Worker observed exit code %d", verify.ExitCode)}}
 	return verify, err
 }
 
-func runPythonModule(dir string, c Client, jobID int, module string) (CommandResult, error) {
-	if _, err := exec.LookPath("python"); err == nil {
-		return logCommand(dir, c, jobID, "python", "-m", module)
+func runVerification(ctx context.Context, cfg Config, repo RepoConfig, c Client, jobID int) ([]Verification, int, error) {
+	checks := make([]Verification, 0, len(repo.Verify))
+	for _, command := range repo.Verify {
+		c.Log(jobID, "system", "Running configured verification: "+command)
+		name, args := commandShell(command)
+		result, err := streamCommand(ctx, cfg.AgentTimeout, repo.Path, c, jobID, name, args...)
+		checks = append(checks, Verification{
+			Command: command,
+			Status:  verificationStatus(result.ExitCode),
+			Summary: fmt.Sprintf("Worker observed exit code %d", result.ExitCode),
+		})
+		if err != nil || result.ExitCode != 0 {
+			if err == nil {
+				err = fmt.Errorf("verification command exited %d", result.ExitCode)
+			}
+			return checks, result.ExitCode, fmt.Errorf("verification failed: %s: %w", command, err)
+		}
 	}
-	return logCommand(dir, c, jobID, "python3", "-m", module)
+	return checks, 0, nil
 }
 
-func logGitStatus(dir string, c Client, jobID int) {
+func verificationStatus(exitCode int) string {
+	if exitCode == 0 {
+		return "passed"
+	}
+	return "failed"
+}
+
+func runPythonModule(ctx context.Context, dir string, c Client, jobID int, module string) (CommandResult, error) {
+	if _, err := exec.LookPath("python"); err == nil {
+		return logCommand(ctx, dir, c, jobID, "python", "-m", module)
+	}
+	return logCommand(ctx, dir, c, jobID, "python3", "-m", module)
+}
+
+func logGitStatus(ctx context.Context, dir string, c Client, jobID int) {
 	if !isGitWorktree(dir) {
 		c.Log(jobID, "system", "Workspace is not inside a git worktree; git status/diff capture disabled")
 		return
 	}
-	logCommand(dir, c, jobID, "git", "status", "--short", "--", ".")
+	logCommand(ctx, dir, c, jobID, "git", "status", "--short", "--", ".")
 }
 
-func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt, task string) (CommandResult, error) {
+func runTemplate(ctx context.Context, cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt, task string) (CommandResult, error) {
 	command := replaceTemplate(tmpl, "prompt", prompt)
 	command = replaceTemplate(command, "task", task)
 	command = replaceTemplate(command, "repo", repo.Path)
@@ -219,16 +383,17 @@ func runTemplate(cfg Config, repo RepoConfig, c Client, jobID int, tmpl, prompt,
 	if cfg.DryRun {
 		return CommandResult{ExitCode: 0, Output: "Dry run: command not executed"}, nil
 	}
-	return streamCommand(cfg.AgentTimeout, repo.Path, c, jobID, "sh", "-c", command)
+	name, args := commandShell(command)
+	return streamCommand(ctx, cfg.AgentTimeout, repo.Path, c, jobID, name, args...)
 }
 
-func runGemini(cfg Config, repo RepoConfig, c Client, jobID int, prompt string) (CommandResult, error) {
+func runGemini(ctx context.Context, cfg Config, repo RepoConfig, c Client, jobID int, prompt string) (CommandResult, error) {
 	args := []string{"--skip-trust", "--approval-mode", "yolo", "--output-format", "json", "-p", prompt}
 	c.Log(jobID, "system", "Running agent command: gemini --skip-trust --approval-mode yolo --output-format json -p <prompt redacted>")
 	if cfg.DryRun {
 		return CommandResult{ExitCode: 0, Output: "Dry run: gemini not executed"}, nil
 	}
-	return streamCommandWithOptions(cfg.AgentTimeout, repo.Path, c, jobID, false, true, "gemini", args...)
+	return streamCommandWithOptions(ctx, cfg.AgentTimeout, repo.Path, c, jobID, false, true, "gemini", args...)
 }
 
 func geminiResponseText(output string) (string, error) {
@@ -270,24 +435,24 @@ func redactedCommandForLog(tmpl string, repo RepoConfig) string {
 	return command
 }
 
-func logCommand(dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
+func logCommand(ctx context.Context, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
 	c.Log(jobID, "system", "Running in "+dir+": "+name+" "+strings.Join(args, " "))
 	logLocal("job id=%d running in %s: %s %s", jobID, dir, name, strings.Join(args, " "))
-	return streamCommand(2*time.Minute, dir, c, jobID, name, args...)
+	return streamCommand(ctx, 2*time.Minute, dir, c, jobID, name, args...)
 }
 
-func streamCommand(timeout time.Duration, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
-	return streamCommandWithOptions(timeout, dir, c, jobID, true, false, name, args...)
+func streamCommand(parent context.Context, timeout time.Duration, dir string, c Client, jobID int, name string, args ...string) (CommandResult, error) {
+	return streamCommandWithOptions(parent, timeout, dir, c, jobID, true, false, name, args...)
 }
 
-func streamCommandWithOptions(timeout time.Duration, dir string, c Client, jobID int, logStdout, filterGeminiNoise bool, name string, args ...string) (CommandResult, error) {
+func streamCommandWithOptions(parent context.Context, timeout time.Duration, dir string, c Client, jobID int, logStdout, filterGeminiNoise bool, name string, args ...string) (CommandResult, error) {
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureProcess(cmd)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -325,12 +490,19 @@ func streamCommandWithOptions(timeout time.Duration, dir string, c Client, jobID
 	select {
 	case err = <-waitDone:
 	case <-ctx.Done():
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = terminateProcess(cmd)
 		err = <-waitDone
 	}
 	<-done
 	<-done
 	elapsed := time.Since(start).Round(time.Second)
+	if errors.Is(parent.Err(), context.Canceled) {
+		msg := "command cancelled"
+		c.Log(jobID, "stderr", msg)
+		c.Log(jobID, "system", fmt.Sprintf("Command finished: exit code 130 after %s", elapsed))
+		logLocal("job id=%d command cancelled after %s", jobID, elapsed)
+		return CommandResult{ExitCode: 130, Output: output.String()}, fmt.Errorf("%s", msg)
+	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		msg := fmt.Sprintf("command timed out after %s", timeout)
 		c.Log(jobID, "stderr", msg)
@@ -398,11 +570,35 @@ func captureGitStatus(dir string) string {
 	return capture(dir, "git", "status", "--short", "--", ".")
 }
 
-func captureGitDiff(dir string) string {
+func captureGitDiff(dir, baseCommit string) (string, error) {
 	if !isGitWorktree(dir) {
-		return ""
+		return "", fmt.Errorf("isolated workspace is not a Git worktree")
 	}
-	return capture(dir, "git", "diff", "--", ".")
+	if _, err := gitOutput(dir, "add", "-A", "--", "."); err != nil {
+		return "", fmt.Errorf("stage isolated workspace changes: %w", err)
+	}
+	diff, err := gitOutput(dir, "diff", "--binary", "--relative", baseCommit, "--", ".")
+	if err != nil {
+		return "", fmt.Errorf("capture isolated workspace patch: %w", err)
+	}
+	return diff, nil
+}
+
+func captureChangedFiles(dir, baseCommit string) ([]string, error) {
+	cmd := exec.Command("git", "diff", "--name-only", "--relative", "-z", baseCommit, "--", ".")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("capture changed files: %w", err)
+	}
+	parts := bytes.Split(output, []byte{0})
+	files := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if len(part) > 0 {
+			files = append(files, string(part))
+		}
+	}
+	return files, nil
 }
 
 func shellQuote(s string) string {
@@ -500,6 +696,28 @@ func normalizeReceiptJSON(body string) (string, Receipt, bool) {
 		return "", receipt, false
 	}
 	return string(normalized), receipt, true
+}
+
+func authoritativeReceiptJSON(body string, exitCode int, changedFiles []string, verification []Verification) (string, error) {
+	var receipt Receipt
+	if err := json.Unmarshal([]byte(body), &receipt); err != nil {
+		return "", fmt.Errorf("decode structured receipt: %w", err)
+	}
+	receipt.ChangedFiles = changedFiles
+	receipt.Verification = verification
+	switch exitCode {
+	case 0:
+		receipt.Status = "completed"
+	case 130:
+		receipt.Status = "cancelled"
+	default:
+		receipt.Status = "failed"
+	}
+	normalized, err := json.Marshal(receipt)
+	if err != nil {
+		return "", fmt.Errorf("encode authoritative receipt: %w", err)
+	}
+	return string(normalized), nil
 }
 
 func extractReceipt(output string) string {

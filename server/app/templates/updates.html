@@ -1,0 +1,28 @@
+{% extends "public_base.html" %}
+{% block title %}Updates · DeadDrop{% endblock %}
+{% block content %}
+<section class="page-hero updates-hero">
+  <p class="eyebrow">Project updates</p>
+  <h1>Building the boring parts until they become the product.</h1>
+  <p>A public record of reliability, distribution, and interface work.</p>
+</section>
+
+<section class="update-list">
+  <article>
+    <div class="update-date"><span>Current</span><small>Reliability foundation</small></div>
+    <div><h2>Agent jobs became recoverable units of work.</h2><p>Added job attempts, sixty-second leases, five-second heartbeats, running cancellation, stale recovery, and idempotent terminal writes. A vanished worker can no longer strand a job forever or overwrite a newer attempt.</p><div class="update-tags"><span>server</span><span>worker</span><span>database</span></div></div>
+  </article>
+  <article>
+    <div class="update-date"><span>Current</span><small>Evidence layer</small></div>
+    <div><h2>Receipts stopped trusting agent claims.</h2><p>Changed files now come from Git, verification comes from configured worker commands, and status comes from observed exit state. Agent prose remains useful context, not system truth.</p><div class="update-tags"><span>receipts</span><span>verification</span></div></div>
+  </article>
+  <article>
+    <div class="update-date"><span>Current</span><small>Source isolation</small></div>
+    <div><h2>Every job moved into a disposable worktree.</h2><p>Jobs start from source <code>HEAD</code>, preserve dirty and untracked local files, capture relative binary patches, support committed subdirectories, and remove the temporary worktree after execution.</p><div class="update-tags"><span>git</span><span>safety</span></div></div>
+  </article>
+  <article>
+    <div class="update-date"><span>Current</span><small>Open-source distribution</small></div>
+    <div><h2>The repository gained a real operator path.</h2><p>Added durable Compose/PostgreSQL deployment, automatic Alembic migrations, a worker setup command, service guidance, release binaries, checksums, contributor docs, support policy, and security reporting.</p><div class="update-tags"><span>operations</span><span>community</span></div></div>
+  </article>
+</section>
+{% endblock %}

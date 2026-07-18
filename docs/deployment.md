@@ -1,121 +1,146 @@
-# Detailed Deployment Guide
+# Deployment
 
-This guide covers how to deploy your own private DeadDrop instance for free using Render and Supabase.
+DeadDrop has two deployment units:
 
-## Prerequisites
-- A GitHub account.
-- A free account on Supabase.
-- A free account on Render.
+- a durable server with PostgreSQL
+- a worker on the machine that owns the source repositories
 
----
+The worker only needs outbound HTTPS access to the server.
 
-## Step 1: Database Setup (Supabase)
-DeadDrop requires a persistent PostgreSQL database. Supabase provides a powerful free tier.
+## Option 1: Docker Compose
 
-1.  **Create a New Project**:
-    - Log into Supabase and click **New Project**.
-    - Choose a name (e.g., `deaddrop-db`) and a secure password.
-    - Select a region close to you.
-2.  **Configure Connection Pooling**:
-    - Once the project is ready, go to **Settings (cog icon) > Database**.
-    - Scroll down to the **Connection Pooler** section.
-    - **IMPORTANT**: Set the **Pool Mode** to `Transaction`.
-    - Find the **Connection String** box, ensure `Node.js` or `URI` is selected, and copy the string.
-    - **CRITICAL**: Use the **Pooled** connection string (typically ends with port `6543`). This ensures compatibility with Render's networking and handles many short-lived connections efficiently.
-    - *Example format:* `postgresql://postgres.[ID]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres`
+This is the recommended self-hosted path for one machine or private network. PostgreSQL data persists in a named Docker volume.
 
----
+Requirements:
 
-## Step 2: Server Setup (Render)
-Render will host the DeadDrop FastAPI server in a secure Docker container.
+- Docker Engine or Docker Desktop with Compose
+- ports `8000` available locally, or a reverse proxy for public use
 
-1.  **Fork the Repository**:
-    - Fork DeadDrop to your own GitHub account.
-2.  **Create a Blueprint**:
-    - Log into Render and click **New > Blueprint**.
-    - Connect your GitHub account and select your DeadDrop fork.
-3.  **Configure Environment Variables**:
-    Render will read the `render.yaml` file and ask you to fill in the following:
-    - `DATABASE_URL`: Paste your Supabase Pooled Connection String from Step 1.
-    - `OWNER_TOKEN`: Generate a long, random secret string (e.g., `openssl rand -base64 32`). This generates a 32-byte cryptographically secure secret that is encoded in Base64 for easy pasting. This is your password for the browser dashboard.
-    - `WORKER_TOKEN`: Generate another unique secret string. This is what your local PC's worker will use to talk to the server.
-    - `SECURE_COOKIES`: Set this to `true`. This enforces that login cookies are only sent over encrypted HTTPS connections.
-4.  **Deploy**:
-    - Click **Apply**. Render will build the Docker image and deploy the service.
-    - Once finished, you will get a URL like `https://deaddrop-xxxx.onrender.com`.
+From the repository root:
 
----
+```bash
+export OWNER_TOKEN="$(openssl rand -hex 32)"
+export WORKER_TOKEN="$(openssl rand -hex 32)"
+export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+export SECURE_COOKIES=false
+docker compose up -d --build
+```
 
-## Step 3: Local Worker Setup
-The worker runs on your local machine and polls the server for tasks.
+Check health:
 
-1.  **Clone your fork** locally.
-2.  **Configure the Workspace**:
-    - Pick the one directory the worker should run inside. It may be a git repo, a subdirectory of a repo, or a plain folder.
-    - Use `repo_alias` / `--repo-alias` value `default`; browser-created jobs always route to `local` / `default`.
-3.  **Start the Worker**:
-    ```bash
-    cd worker
-    go run . run \
-      --server https://your-app-name.onrender.com \
-      --token YOUR_WORKER_TOKEN \
-      --worker local \
-      --repo /absolute/path/to/your/workspace \
-      --repo-alias default \
-      --agent gemini
-    ```
-    The worker will register the fixed workspace with the server and start polling.
+```bash
+curl --fail http://localhost:8000/healthz
+curl --fail http://localhost:8000/readyz
+```
 
----
+Open `http://localhost:8000/login` and enter `OWNER_TOKEN`.
 
-## Security Aspect: How DeadDrop Protects You
+Operational commands:
 
-DeadDrop is designed with a "Trust but Verify" model. Unlike other agents that might have broad access to your machine, DeadDrop is restricted by design:
+```bash
+docker compose logs -f server
+docker compose pull
+docker compose up -d --build
+docker compose down
+```
 
-### 1. Zero Inbound Connections
-The server never connects to your PC. Your PC's worker makes outbound requests to the server to check for jobs. This means you don't need to open ports on your router or use tunnels like Ngrok.
+`docker compose down` keeps the database volume. `docker compose down -v` deletes it and must only be used when permanent data removal is intended.
 
-### 2. Bearer Token Authentication
-Every single request is guarded by high-entropy tokens:
-- **Owner Token**: Protects the dashboard. Only you can see your tasks.
-- **Worker Token**: Protects the worker APIs. Only your local machine can claim and update jobs.
-- All comparisons are done using constant-time logic (`compare_digest`) to prevent hackers from guessing tokens via timing side-channels.
+For internet exposure, place the server behind a TLS reverse proxy, set `SECURE_COOKIES=true`, restrict access where practical, and back up the `deaddrop-data` volume.
 
-### 3. CSRF & Secure Cookies
-- **Double Submit Cookie**: Every form in the dashboard is protected by a CSRF token. This prevents malicious websites from trying to "drop a task" into your inbox while you're logged in elsewhere.
-- **Strict HTTPS**: In production, cookies are flagged as `Secure` and `HttpOnly`, meaning they are never sent over plain text and cannot be stolen by malicious browser scripts.
+## Option 2: Render and managed PostgreSQL
 
-### 4. Worker Hardening
-- **No Root Execution**: The Go worker will refuse to start if run as `root`. This limits the potential damage if a malicious task prompt were somehow executed.
-- **Path Isolation**: The worker only operates inside the directories you explicitly whitelist with `--repo` or your manifest. Git status and diff capture are scoped to the configured workspace path.
-- **No Auto-Commit**: By default, the system captures a `git diff` but never runs `git commit`. You are the final gatekeeper—you review the diff on the dashboard and apply it manually on your machine.
+The root `render.yaml` builds `server/Dockerfile`. Any PostgreSQL provider with a standard connection URL works; Supabase is one option.
 
----
+Create a Render Blueprint from your fork and set:
 
-## Cost Analysis
-- **Supabase**: Free Tier (500MB DB) is more than enough for thousands of DeadDrop tasks.
-- **Render**: Free Tier (Web Service) is sufficient for personal use. Note that the Free Tier "sleeps" after 15 minutes of inactivity; the first request after a sleep may take 30 seconds to load.
-## Token Management Best Practices
+- `DATABASE_URL`: persistent PostgreSQL URL
+- `OWNER_TOKEN`: a random owner secret
+- `WORKER_TOKEN`: a different random worker secret
+- `SECURE_COOKIES`: `true`
 
-To keep your DeadDrop instance secure, follow these guidelines for managing your `OWNER_TOKEN` and `WORKER_TOKEN`:
+The Docker image honors Render's injected `PORT`. Server startup applies pending Alembic migrations before accepting traffic.
 
-### 1. Avoid Persistent .env Files
-While `.env` files are convenient for local development, they are a security risk if left on disk. 
-- **Production**: Never use `.env` files. Use Render's built-in **Environment Variables** interface. These are stored securely in memory and never touch the server's disk.
-- **Local**: Instead of creating a `.env` file, set the tokens in your current terminal session:
-  ```bash
-  export OWNER_TOKEN="your_secret_here"
-  export WORKER_TOKEN="your_secret_here"
-  ```
-  This ensures that when you close your terminal, the secrets are gone from memory.
+For Supabase, use its pooled PostgreSQL connection string when required by the hosting network. Keep the password URL-encoded if it contains reserved URL characters.
 
-### 2. Protect the Worker from the Agent
-If you configure a worker to run an agent (like Gemini) inside a repository, the agent has the same file permissions as the worker. 
-- **CRITICAL**: Never add the `DeadDrop` repository itself to your worker's manifest. If you do, a malicious prompt could trick the agent into reading your `DeadDrop` configuration or `.env` files.
-- **Isolation**: Only add repositories that contain the code you want to work on. Keep your "Mission Control" (the DeadDrop server and worker code) separate from the "Workspaces" (your project repos).
+Do not use Render's ephemeral local filesystem as the production database.
 
-### 3. Rotate Tokens Regularly
-If you suspect a token has been leaked, rotate it immediately:
-1. Update the variable on Render.
-2. Restart your local worker with the new `WORKER_TOKEN`.
-3. Log back into the dashboard with the new `OWNER_TOKEN`.
+## Local development server
+
+```bash
+cd server
+uv sync --frozen
+export OWNER_TOKEN=owner-dev
+export WORKER_TOKEN=worker-dev
+export DATABASE_URL=sqlite:///./deaddrop.db
+export SECURE_COOKIES=false
+uv run uvicorn app.main:app --reload
+```
+
+SQLite is intentionally a development path. Use PostgreSQL for a durable shared installation.
+
+## Worker installation
+
+Download the appropriate `deaddrop-worker` binary and verify it against `SHA256SUMS` from [GitHub Releases](https://github.com/haroon0x/DeadDrop/releases), or build it:
+
+```bash
+cd worker
+go build -trimpath -o deaddrop-worker .
+```
+
+Create a manifest:
+
+```bash
+./deaddrop-worker init \
+  --repo /absolute/path/to/project \
+  --verify "python -m pytest"
+```
+
+Run against the hosted server:
+
+```bash
+./deaddrop-worker run \
+  --server https://deaddrop.example.com \
+  --token "$WORKER_TOKEN" \
+  --manifest deaddrop.manifest.json \
+  --agent gemini
+```
+
+Use [Worker service](worker-service.md) to keep it running under the operating system's service manager.
+
+## Upgrade procedure
+
+1. Back up PostgreSQL.
+2. Read the release notes and migration notes.
+3. Update the server image or source checkout.
+4. Restart the server; startup applies migrations.
+5. Replace and restart the worker binary.
+6. Verify `/readyz`, create a small task, and confirm its receipt.
+
+Server and worker should normally run the same release. Attempt IDs prevent an outdated or stale process from overwriting a newer active attempt, but API compatibility is only guaranteed within the supported release line.
+
+## Secrets
+
+Use independent high-entropy tokens. Never commit them to the repository or manifest. Rotate both tokens after suspected exposure.
+
+The worker token authorizes local work claims and result submission. Anyone with it and server access can impersonate the worker. The owner token exposes prompts, logs, patches, and job controls.
+
+For a service manager, keep `WORKER_TOKEN` in a file readable only by the worker user. For hosted server secrets, use the platform's secret manager.
+
+## Backups and recovery
+
+Back up the PostgreSQL database, including the Compose volume or managed-provider snapshots. The server database contains prompts, logs, receipts, and patches.
+
+The source repositories remain the authority for code. DeadDrop never applies returned patches to them. Pending terminal results live on the worker machine and replay automatically after connectivity returns.
+
+## Production checklist
+
+- HTTPS enabled
+- `SECURE_COOKIES=true`
+- distinct random owner and worker tokens
+- persistent PostgreSQL with backups
+- worker running as non-root dedicated user
+- only intended Git workspaces configured
+- trusted verification commands configured
+- server and worker on the same release
+- `/healthz` and `/readyz` monitored

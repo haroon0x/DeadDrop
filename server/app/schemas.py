@@ -9,11 +9,13 @@ class JobCreate(BaseModel):
 
 
 class LogCreate(BaseModel):
+    attempt_id: str = Field(min_length=36, max_length=36)
     stream: str = "system"
     content: str = Field(min_length=1, max_length=20000)
 
 
 class CompleteJob(BaseModel):
+    attempt_id: str = Field(min_length=36, max_length=36)
     exit_code: int = 0
     final_summary: str = Field(default="", max_length=50000)
     receipt_json: str = Field(default="", max_length=50000)
@@ -21,8 +23,21 @@ class CompleteJob(BaseModel):
 
 
 class FailJob(BaseModel):
+    attempt_id: str = Field(min_length=36, max_length=36)
     exit_code: int = 1
     error_message: str = Field(default="", max_length=5000)
+    final_summary: str = Field(default="", max_length=50000)
+    receipt_json: str = Field(default="", max_length=50000)
+    git_diff: str = Field(default="", max_length=500000)
+
+
+class AttemptRequest(BaseModel):
+    attempt_id: str = Field(min_length=36, max_length=36)
+
+
+class CancelledJob(BaseModel):
+    attempt_id: str = Field(min_length=36, max_length=36)
+    exit_code: int = 130
     final_summary: str = Field(default="", max_length=50000)
     receipt_json: str = Field(default="", max_length=50000)
     git_diff: str = Field(default="", max_length=500000)

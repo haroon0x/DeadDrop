@@ -1,0 +1,47 @@
+{% extends "public_base.html" %}
+{% block title %}Architecture · DeadDrop{% endblock %}
+{% block content %}
+<section class="page-hero architecture-hero">
+  <p class="eyebrow">Architecture</p>
+  <h1>The server coordinates. The worker proves.</h1>
+  <p>DeadDrop keeps public job state separate from local execution and makes every handoff explicit.</p>
+</section>
+
+<section class="architecture-map" aria-label="DeadDrop architecture flow">
+  <div class="map-node"><span>01</span><strong>Browser</strong><small>owner token · task control</small></div>
+  <div class="map-connection"><span>HTTPS</span></div>
+  <div class="map-node featured-node"><span>02</span><strong>FastAPI + PostgreSQL</strong><small>jobs · attempts · logs · receipts</small></div>
+  <div class="map-connection outbound"><span>outbound poll</span></div>
+  <div class="map-node"><span>03</span><strong>Go worker</strong><small>lease · execution · evidence</small></div>
+  <div class="map-connection"><span>local only</span></div>
+  <div class="map-node"><span>04</span><strong>Git worktree</strong><small>agent · verify · patch · remove</small></div>
+</section>
+
+<section class="public-section architecture-section">
+  <div class="section-heading"><p class="eyebrow">State machine</p><h2>A job can be retried without accepting a ghost result.</h2></div>
+  <div class="state-flow">
+    <div><span class="badge queued">queued</span><p>Waiting for matching worker</p></div>
+    <i>→</i>
+    <div><span class="badge running">running</span><p>Unique attempt owns lease</p></div>
+    <i>→</i>
+    <div class="terminal-states"><span class="badge completed">completed</span><span class="badge failed">failed</span><span class="badge cancelled">cancelled</span></div>
+  </div>
+  <p class="architecture-note">If the lease expires, the attempt becomes <strong>lost</strong> and the job returns to queued. A new attempt ID makes late writes from the vanished worker invalid.</p>
+</section>
+
+<section class="public-section principle-grid">
+  <article><span class="docs-index">01</span><h3>Paths stay local</h3><p>The server stores a route alias. Only the worker knows which absolute directory it maps to.</p></article>
+  <article><span class="docs-index">02</span><h3>Edits stay disposable</h3><p>The source workspace is read-only during the job. Agents work from a detached baseline worktree.</p></article>
+  <article><span class="docs-index">03</span><h3>Facts come from tools</h3><p>Git supplies changed files and patch. Trusted commands supply verification status.</p></article>
+  <article><span class="docs-index">04</span><h3>Results survive networks</h3><p>Bounded retries fall back to an atomic local spool that replays before new claims.</p></article>
+</section>
+
+<section class="public-section trust-panel">
+  <div><p class="eyebrow">Trust boundary</p><h2>Isolation is precise, not magical.</h2></div>
+  <div>
+    <p>The worktree protects source Git state. It does not sandbox filesystem, network, credentials, or tools available to the worker user.</p>
+    <p>Run a dedicated non-root worker, expose only intended repositories, and review every returned patch.</p>
+    <a class="text-link" href="https://github.com/haroon0x/DeadDrop/blob/main/SECURITY.md">Read the security policy</a>
+  </div>
+</section>
+{% endblock %}

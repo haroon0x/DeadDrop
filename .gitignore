@@ -177,6 +177,7 @@ go.work
 
 # Worker binary
 worker/worker
+deaddrop.manifest.json
 
 # Local app databases
 deaddrop.db

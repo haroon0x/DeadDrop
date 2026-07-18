@@ -3,7 +3,8 @@
     {
       "alias": "default",
       "name": "Demo repo",
-      "path": "../examples/demo-repo"
+      "path": "../examples/demo-repo",
+      "verify": ["python -m pytest"]
     }
   ]
 }

@@ -10,11 +10,13 @@
     <div><dt>Completed</dt><dd>{{ job.completed_at or "not complete" }}</dd></div>
     <div><dt>Exit code</dt><dd>{{ job.exit_code if job.exit_code is not none else "n/a" }}</dd></div>
   </dl>
-  {% if job.status == "queued" %}
+  {% if job.status in ["queued", "running"] and not job.cancel_requested_at %}
   <form method="post" action="/jobs/{{ job.id }}/cancel" class="inline-action">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="secondary-button">Cancel queued job</button>
+    <button type="submit" class="secondary-button">Cancel {{ job.status }} job</button>
   </form>
+  {% elif job.status == "running" and job.cancel_requested_at %}
+  <p class="muted">Cancellation requested. Waiting for worker acknowledgement.</p>
   {% endif %}
   {% if job.receipt %}
   {% set receipt = job.receipt %}

@@ -10,9 +10,10 @@ import (
 )
 
 type RepoConfig struct {
-	Alias string `json:"alias"`
-	Path  string `json:"path"`
-	Name  string `json:"name"`
+	Alias  string   `json:"alias"`
+	Path   string   `json:"path"`
+	Name   string   `json:"name"`
+	Verify []string `json:"verify"`
 }
 
 type Config struct {
@@ -29,6 +30,21 @@ type Config struct {
 	DryRun          bool
 	RunOnce         bool
 	CommandTemplate string
+	VerifyCommands  []string
+}
+
+type stringListFlag []string
+
+func (values *stringListFlag) String() string {
+	return ""
+}
+
+func (values *stringListFlag) Set(value string) error {
+	if value == "" {
+		return fmt.Errorf("verification command cannot be empty")
+	}
+	*values = append(*values, value)
+	return nil
 }
 
 func parseConfig(args []string) (Config, error) {
@@ -49,6 +65,7 @@ func parseConfig(args []string) (Config, error) {
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "log command without running it")
 	fs.BoolVar(&cfg.RunOnce, "run-once", false, "poll once, process at most one job, then exit")
 	fs.StringVar(&cfg.CommandTemplate, "command-template", "", "custom command template")
+	fs.Var((*stringListFlag)(&cfg.VerifyCommands), "verify", "verification command; repeat for multiple commands")
 	if err := fs.Parse(args[1:]); err != nil {
 		return Config{}, err
 	}
@@ -97,7 +114,7 @@ func (cfg *Config) loadRepos() error {
 		if _, err := os.Stat(cfg.Repo); err != nil {
 			return fmt.Errorf("repo path invalid: %w", err)
 		}
-		cfg.Repos[cfg.RepoAlias] = RepoConfig{Alias: cfg.RepoAlias, Path: cfg.Repo, Name: cfg.RepoAlias}
+		cfg.Repos[cfg.RepoAlias] = RepoConfig{Alias: cfg.RepoAlias, Path: cfg.Repo, Name: cfg.RepoAlias, Verify: cfg.VerifyCommands}
 	}
 	if len(cfg.Repos) == 0 {
 		return fmt.Errorf("--manifest or --repo is required")

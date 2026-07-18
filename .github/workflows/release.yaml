@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  worker-binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+      - name: Build worker
+        working-directory: worker
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          extension=""
+          if [ "$GOOS" = "windows" ]; then extension=".exe"; fi
+          output="deaddrop-worker_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}${extension}"
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "../${output}" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deaddrop-worker-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: deaddrop-worker_*
+          if-no-files-found: error
+
+  publish:
+    needs: worker-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deaddrop-worker-*
+          merge-multiple: true
+      - name: Create checksums
+        run: sha256sum deaddrop-worker_* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            deaddrop-worker_*
+            SHA256SUMS
