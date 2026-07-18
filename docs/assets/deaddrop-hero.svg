@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">DeadDrop — leave a coding task, come back to a verified patch</title>
+  <desc id="desc">A dark terminal-inspired product banner showing a task moving through an outbound worker, isolated worktree, verification, and patch receipt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#080A08"/>
+      <stop offset="1" stop-color="#10140C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(850 90) rotate(135) scale(520 380)">
+      <stop stop-color="#C8F135" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#C8F135" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" stroke="#E9F0DF" stroke-opacity="0.045"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="560" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="560" rx="28" fill="url(#glow)"/>
+  <rect width="1200" height="560" rx="28" fill="url(#grid)"/>
+  <rect x="1" y="1" width="1198" height="558" rx="27" stroke="#C8F135" stroke-opacity="0.24" stroke-width="2"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <circle cx="48" cy="44" r="5" fill="#C8F135"/>
+    <circle cx="67" cy="44" r="5" fill="#C8F135" fill-opacity="0.42"/>
+    <circle cx="86" cy="44" r="5" fill="#C8F135" fill-opacity="0.16"/>
+    <text x="112" y="50" fill="#93A287" font-size="13" font-weight="700" letter-spacing="2">LOCAL AGENT CONTROL PLANE</text>
+    <text x="1150" y="50" fill="#C8F135" font-size="13" font-weight="700" text-anchor="end">● READY</text>
+
+    <g transform="translate(54 112)">
+      <rect width="178" height="28" rx="14" fill="#C8F135" fill-opacity="0.12" stroke="#C8F135" stroke-opacity="0.38"/>
+      <text x="89" y="19" fill="#C8F135" font-size="11" font-weight="800" letter-spacing="1.4" text-anchor="middle">SELF-HOSTED · OSS</text>
+      <text x="0" y="90" fill="#F2F6ED" font-size="64" font-weight="850" letter-spacing="-4">LEAVE THE TASK.</text>
+      <text x="0" y="156" fill="#C8F135" font-size="64" font-weight="850" letter-spacing="-4">COME BACK TO PROOF.</text>
+      <text x="2" y="203" fill="#A8B39F" font-size="18">Local agents. Disposable worktrees. Worker-verified receipts.</text>
+      <text x="2" y="232" fill="#A8B39F" font-size="18">Your checkout stays yours.</text>
+    </g>
+
+    <g transform="translate(708 92)" filter="url(#shadow)">
+      <rect width="438" height="298" rx="18" fill="#0D110B" stroke="#CBD8BF" stroke-opacity="0.18"/>
+      <rect x="1" y="1" width="436" height="45" rx="17" fill="#151A12"/>
+      <path d="M1 46H437" stroke="#CBD8BF" stroke-opacity="0.12"/>
+      <circle cx="24" cy="23" r="4" fill="#C8F135"/>
+      <text x="40" y="28" fill="#DCE6D3" font-size="12" font-weight="700">receipt / job-184</text>
+      <rect x="334" y="13" width="84" height="20" rx="10" fill="#C8F135" fill-opacity="0.14"/>
+      <text x="376" y="27" fill="#C8F135" font-size="10" font-weight="800" text-anchor="middle">COMPLETED</text>
+
+      <text x="24" y="78" fill="#74816B" font-size="11" font-weight="700" letter-spacing="1.2">BASELINE</text>
+      <text x="414" y="78" fill="#E8EEE2" font-size="12" text-anchor="end">cf0a5375cfa0</text>
+      <path d="M24 94H414" stroke="#CBD8BF" stroke-opacity="0.1"/>
+      <text x="24" y="121" fill="#74816B" font-size="11" font-weight="700" letter-spacing="1.2">CHANGED</text>
+      <text x="414" y="121" fill="#E8EEE2" font-size="12" text-anchor="end">app.py · test_app.py</text>
+      <path d="M24 137H414" stroke="#CBD8BF" stroke-opacity="0.1"/>
+      <text x="24" y="164" fill="#74816B" font-size="11" font-weight="700" letter-spacing="1.2">VERIFY</text>
+      <text x="414" y="164" fill="#C8F135" font-size="12" font-weight="800" text-anchor="end">15 PASSED ✓</text>
+      <path d="M24 180H414" stroke="#CBD8BF" stroke-opacity="0.1"/>
+
+      <rect x="24" y="204" width="390" height="70" rx="10" fill="#080A08" stroke="#C8F135" stroke-opacity="0.16"/>
+      <text x="40" y="228" fill="#7F8C76" font-size="11">- return a - b</text>
+      <text x="40" y="250" fill="#C8F135" font-size="11">+ return a + b</text>
+      <rect x="298" y="222" width="98" height="32" rx="7" fill="#C8F135"/>
+      <text x="347" y="242" fill="#11150A" font-size="10" font-weight="900" text-anchor="middle">GET PATCH ↓</text>
+    </g>
+
+    <g transform="translate(54 446)">
+      <rect width="200" height="58" rx="12" fill="#11150E" stroke="#C8F135" stroke-opacity="0.26"/>
+      <text x="18" y="24" fill="#74816B" font-size="10" font-weight="700" letter-spacing="1">01 · BROWSER</text>
+      <text x="18" y="43" fill="#E8EEE2" font-size="12" font-weight="700">Drop a task</text>
+      <path d="M212 29H248" stroke="#C8F135" stroke-opacity="0.7"/>
+      <path d="M242 23L248 29L242 35" stroke="#C8F135" stroke-opacity="0.7" fill="none"/>
+
+      <g transform="translate(260)">
+        <rect width="200" height="58" rx="12" fill="#11150E" stroke="#C8F135" stroke-opacity="0.26"/>
+        <text x="18" y="24" fill="#74816B" font-size="10" font-weight="700" letter-spacing="1">02 · WORKER</text>
+        <text x="18" y="43" fill="#E8EEE2" font-size="12" font-weight="700">Poll outbound</text>
+      </g>
+      <path d="M472 29H508" stroke="#C8F135" stroke-opacity="0.7"/>
+      <path d="M502 23L508 29L502 35" stroke="#C8F135" stroke-opacity="0.7" fill="none"/>
+
+      <g transform="translate(520)">
+        <rect width="250" height="58" rx="12" fill="#11150E" stroke="#C8F135" stroke-opacity="0.26"/>
+        <text x="18" y="24" fill="#74816B" font-size="10" font-weight="700" letter-spacing="1">03 · WORKTREE</text>
+        <text x="18" y="43" fill="#E8EEE2" font-size="12" font-weight="700">Run isolated + verify</text>
+      </g>
+      <path d="M782 29H818" stroke="#C8F135" stroke-opacity="0.7"/>
+      <path d="M812 23L818 29L812 35" stroke="#C8F135" stroke-opacity="0.7" fill="none"/>
+
+      <g transform="translate(830)">
+        <rect width="262" height="58" rx="12" fill="#C8F135" fill-opacity="0.09" stroke="#C8F135" stroke-opacity="0.44"/>
+        <text x="18" y="24" fill="#C8F135" font-size="10" font-weight="700" letter-spacing="1">04 · RECEIPT</text>
+        <text x="18" y="43" fill="#F2F6ED" font-size="12" font-weight="700">Review evidence + patch</text>
+      </g>
+    </g>
+  </g>
+</svg>
