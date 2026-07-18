@@ -81,7 +81,7 @@ def test_create_job_and_worker_flow():
     complete = c.post(
         f"/api/worker/jobs/{job_id}/complete",
         headers=worker_headers(),
-        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Fixed", "git_diff": "diff --git"},
+        json={"attempt_id": attempt_id, "exit_code": 0, "final_summary": "Fixed", "git_diff": "diff --git", "baseline_commit": "a" * 40},
     )
     assert complete.status_code == 200
     body = complete.json()
@@ -91,7 +91,43 @@ def test_create_job_and_worker_flow():
     fetched = c.get(f"/api/jobs/{job_id}", headers=owner_headers())
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "completed"
+    assert fetched.json()["baseline_commit"] == "a" * 40
     assert fetched.json()["logs"][0]["content"] == "Picked up job"
+
+
+def test_owner_can_download_patch():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Patch", "prompt": "Change a file"},
+    )
+    job_id = create.json()["id"]
+    assert c.get(f"/api/jobs/{job_id}/patch", headers=owner_headers()).status_code == 409
+    claimed = c.get("/api/worker/next?worker_name=local", headers=worker_headers()).json()
+    patch = "diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n"
+    complete = c.post(
+        f"/api/worker/jobs/{job_id}/complete",
+        headers=worker_headers(),
+        json={
+            "attempt_id": claimed["attempt_id"],
+            "exit_code": 0,
+            "final_summary": "Changed app.py",
+            "git_diff": patch,
+            "baseline_commit": "b" * 40,
+        },
+    )
+    assert complete.status_code == 200
+    assert c.get(f"/api/jobs/{job_id}/patch").status_code == 401
+    download = c.get(f"/api/jobs/{job_id}/patch", headers=owner_headers())
+    assert download.status_code == 200
+    assert download.text == patch
+    assert download.headers["content-type"].startswith("text/x-diff")
+    assert download.headers["content-disposition"] == f'attachment; filename="deaddrop-job-{job_id}.patch"'
+    assert download.headers["cache-control"] == "private, no-store"
+    page = c.get(f"/jobs/{job_id}", cookies={"owner_token": "owner_test"})
+    assert f'href="/jobs/{job_id}/patch"' in page.text
+    assert ("b" * 40) in page.text
 
 
 def test_new_job_page_hides_repo_and_worker_choice():

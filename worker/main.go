@@ -141,7 +141,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 	cancel()
 	if client.CancelRequested(job.ID) {
 		client.Log(job.ID, "system", "Reporting cancelled result to server")
-		if err := client.Cancelled(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
+		if err := client.Cancelled(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff, result.BaseCommit); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -155,7 +155,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 		}
 		logLocal("reporting failed job id=%d exit_code=%d error=%q", job.ID, result.ExitCode, msg)
 		client.Log(job.ID, "system", fmt.Sprintf("Reporting failed result to server: exit code %d", result.ExitCode))
-		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
+		if err := client.Fail(job.ID, result.ExitCode, msg, result.Summary, result.ReceiptJSON, result.Diff, result.BaseCommit); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -167,7 +167,7 @@ func handleJob(cfg Config, client Client, job Job) int {
 	}
 	logLocal("reporting completed job id=%d exit_code=%d", job.ID, result.ExitCode)
 	client.Log(job.ID, "system", fmt.Sprintf("Reporting completed result to server: exit code %d", result.ExitCode))
-	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff); err != nil {
+	if err := client.Complete(job.ID, result.ExitCode, result.Summary, result.ReceiptJSON, result.Diff, result.BaseCommit); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

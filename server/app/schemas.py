@@ -20,6 +20,7 @@ class CompleteJob(BaseModel):
     final_summary: str = Field(default="", max_length=50000)
     receipt_json: str = Field(default="", max_length=50000)
     git_diff: str = Field(default="", max_length=500000)
+    baseline_commit: str = Field(default="", max_length=64)
 
 
 class FailJob(BaseModel):
@@ -29,6 +30,7 @@ class FailJob(BaseModel):
     final_summary: str = Field(default="", max_length=50000)
     receipt_json: str = Field(default="", max_length=50000)
     git_diff: str = Field(default="", max_length=500000)
+    baseline_commit: str = Field(default="", max_length=64)
 
 
 class AttemptRequest(BaseModel):
@@ -41,6 +43,7 @@ class CancelledJob(BaseModel):
     final_summary: str = Field(default="", max_length=50000)
     receipt_json: str = Field(default="", max_length=50000)
     git_diff: str = Field(default="", max_length=500000)
+    baseline_commit: str = Field(default="", max_length=64)
 
 
 class WorkerRepo(BaseModel):

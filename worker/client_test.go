@@ -44,7 +44,7 @@ func TestClientBatchesLogsAndReplaysPendingResult(t *testing.T) {
 	client.setAttempt(7, "00000000-0000-0000-0000-000000000007")
 	client.Log(7, "stdout", "first")
 	client.Log(7, "stdout", "second")
-	if err := client.Complete(7, 0, "done", "", "diff"); err == nil || !strings.Contains(err.Error(), "result saved") {
+	if err := client.Complete(7, 0, "done", "", "diff", "abc123"); err == nil || !strings.Contains(err.Error(), "result saved") {
 		t.Fatalf("expected spooled result error, got %v", err)
 	}
 	if logRequests.Load() != 1 {

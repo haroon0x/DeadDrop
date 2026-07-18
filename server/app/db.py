@@ -62,6 +62,7 @@ jobs = Table(
     Column("final_summary", Text),
     Column("receipt_json", Text),
     Column("git_diff", Text),
+    Column("baseline_commit", String(64)),
     Column("exit_code", Integer),
     Index("idx_jobs_status_worker", "status", "worker_name", "created_at"),
     Index("idx_jobs_lease", "status", "lease_expires_at"),

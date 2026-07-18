@@ -1356,6 +1356,37 @@ dd {
   color: #d9e5c7;
 }
 
+.handoff-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.handoff-head h2 {
+  margin-top: .25rem;
+}
+
+.handoff-head .eyebrow {
+  margin: 0;
+}
+
+.handoff-commands {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .6rem;
+  background: rgba(0, 0, 0, .24);
+  color: #d9e5c7;
+}
+
+@media (max-width: 36rem) {
+  .handoff-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .auth-shell {
   min-height: 100dvh;
   display: grid;

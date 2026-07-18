@@ -15,6 +15,7 @@
 - [x] Add setup command, release binaries, checksums, and release process
 - [x] Add contributor, security, support, architecture, and deployment docs
 - [x] Expand frontend into landing, docs, architecture, updates, and technical blog
+- [x] Add authenticated patch download, baseline evidence, and local apply guidance
 
 ## Next releases
 
@@ -24,4 +25,3 @@
 - [ ] Add login and API rate limiting suitable for multi-instance deployment
 - [ ] Add an operator-visible view of attempt history and lost-worker recovery
 - [ ] Package a signed macOS worker and document Windows service installation in depth
-- [ ] Add patch download and local apply instructions without automatic acceptance

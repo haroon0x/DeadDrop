@@ -21,6 +21,7 @@ type RunResult struct {
 	Summary     string
 	ReceiptJSON string
 	Diff        string
+	BaseCommit  string
 	Err         error
 }
 
@@ -142,9 +143,9 @@ func runJob(ctx context.Context, cfg Config, c Client, job Job) RunResult {
 		c.Log(job.ID, "system", err.Error())
 	}
 	if err != nil {
-		return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff, Err: err}
+		return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff, BaseCommit: workspace.BaseCommit, Err: err}
 	}
-	return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff}
+	return RunResult{ExitCode: command.ExitCode, Summary: summary, ReceiptJSON: receiptJSON, Diff: diff, BaseCommit: workspace.BaseCommit}
 }
 
 func prepareJobWorkspace(path string, jobID int) (JobWorkspace, error) {
@@ -577,11 +578,13 @@ func captureGitDiff(dir, baseCommit string) (string, error) {
 	if _, err := gitOutput(dir, "add", "-A", "--", "."); err != nil {
 		return "", fmt.Errorf("stage isolated workspace changes: %w", err)
 	}
-	diff, err := gitOutput(dir, "diff", "--binary", "--relative", baseCommit, "--", ".")
+	cmd := exec.Command("git", "diff", "--binary", "--relative", baseCommit, "--", ".")
+	cmd.Dir = dir
+	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("capture isolated workspace patch: %w", err)
 	}
-	return diff, nil
+	return string(output), nil
 }
 
 func captureChangedFiles(dir, baseCommit string) ([]string, error) {

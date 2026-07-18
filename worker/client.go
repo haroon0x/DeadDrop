@@ -297,30 +297,30 @@ func batchLogs(entries []logEntry) []logEntry {
 	return batches
 }
 
-func (c Client) Complete(jobID, exitCode int, summary, receiptJSON, diff string) error {
+func (c Client) Complete(jobID, exitCode int, summary, receiptJSON, diff, baseCommit string) error {
 	attemptID, err := c.attemptID(jobID)
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff}
+	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff, "baseline_commit": baseCommit}
 	return c.finishJob(jobID, "complete", payload)
 }
 
-func (c Client) Fail(jobID, exitCode int, message, summary, receiptJSON, diff string) error {
+func (c Client) Fail(jobID, exitCode int, message, summary, receiptJSON, diff, baseCommit string) error {
 	attemptID, err := c.attemptID(jobID)
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "error_message": message, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff}
+	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "error_message": message, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff, "baseline_commit": baseCommit}
 	return c.finishJob(jobID, "fail", payload)
 }
 
-func (c Client) Cancelled(jobID, exitCode int, summary, receiptJSON, diff string) error {
+func (c Client) Cancelled(jobID, exitCode int, summary, receiptJSON, diff, baseCommit string) error {
 	attemptID, err := c.attemptID(jobID)
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff}
+	payload := map[string]any{"attempt_id": attemptID, "exit_code": exitCode, "final_summary": summary, "receipt_json": receiptJSON, "git_diff": diff, "baseline_commit": baseCommit}
 	return c.finishJob(jobID, "cancelled", payload)
 }
 

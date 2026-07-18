@@ -29,6 +29,12 @@ def request(url: str, token: str, body: dict | None = None) -> dict:
         return json.load(response)
 
 
+def download(url: str, token: str) -> tuple[bytes, dict[str, str]]:
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as response:
+        return response.read(), {key.lower(): value for key, value in response.headers.items()}
+
+
 def test_server_worker_workflow_isolated_and_verified(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -39,6 +45,9 @@ def test_server_worker_workflow_isolated_and_verified(tmp_path: Path) -> None:
     (repo / "test_app.py").write_text("from app import add\n\ndef test_add():\n    assert add(2, 3) == 5\n", encoding="utf-8")
     run("git", "add", "app.py", "test_app.py", cwd=repo)
     run("git", "commit", "-qm", "baseline", cwd=repo)
+    baseline = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
     (repo / "app.py").write_text("def add(a, b):\n    return a - b\n\nLOCAL = True\n", encoding="utf-8")
     (repo / "local.txt").write_text("untracked\n", encoding="utf-8")
 
@@ -111,6 +120,7 @@ def test_server_worker_workflow_isolated_and_verified(tmp_path: Path) -> None:
         result = request(f"{base}/api/jobs/{job['id']}", "owner-e2e")
         assert result["status"] == "completed"
         assert result["attempt_number"] == 1
+        assert result["baseline_commit"] == baseline
         assert result["receipt"]["changed_files"] == ["app.py"]
         assert result["receipt"]["verification"] == [
             {
@@ -120,6 +130,15 @@ def test_server_worker_workflow_isolated_and_verified(tmp_path: Path) -> None:
             }
         ]
         assert "return a + b" in result["git_diff"]
+        patch, headers = download(f"{base}/api/jobs/{job['id']}/patch", "owner-e2e")
+        assert headers["content-disposition"] == f'attachment; filename="deaddrop-job-{job["id"]}.patch"'
+        patch_path = tmp_path / f"deaddrop-job-{job['id']}.patch"
+        patch_path.write_bytes(patch)
+        applied = tmp_path / "applied"
+        run("git", "clone", "-q", str(repo), str(applied), cwd=tmp_path)
+        run("git", "apply", "--check", str(patch_path), cwd=applied)
+        run("git", "apply", str(patch_path), cwd=applied)
+        run(sys.executable, "-m", "pytest", "-q", cwd=applied)
         assert "LOCAL = True" in (repo / "app.py").read_text(encoding="utf-8")
         source_status = subprocess.run(
             ["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True

@@ -15,6 +15,7 @@
     <a href="#manifest">Create a manifest</a>
     <a href="#run">Run the worker</a>
     <a href="#receipts">Read receipts</a>
+    <a href="#apply">Apply a patch</a>
     <a href="#next">Go deeper</a>
   </aside>
 
@@ -77,8 +78,18 @@ go build -o deaddrop-worker .
       </div>
     </section>
 
-    <section id="next">
+    <section id="apply">
       <span class="docs-index">07</span>
+      <h2>Apply a result deliberately</h2>
+      <p>Download the patch from the completed job, commit or stash unrelated local work, and run these commands from the configured workspace.</p>
+      <pre><code>git apply --stat /path/to/deaddrop-job-42.patch
+git apply --check /path/to/deaddrop-job-42.patch
+git apply /path/to/deaddrop-job-42.patch</code></pre>
+      <p>The receipt includes the exact baseline commit. If your branch has moved, review the patch and use <code>git apply --3way</code> only when you are ready to resolve conflicts. Verify and review the applied diff before committing it.</p>
+    </section>
+
+    <section id="next">
+      <span class="docs-index">08</span>
       <h2>Go deeper</h2>
       <div class="link-stack">
         <a href="/docs/architecture"><span>Architecture</span><small>Attempts, worktrees, receipts, transport, and trust boundaries</small></a>

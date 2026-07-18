@@ -13,6 +13,7 @@ This repository is an open-source project for individual developers and small tr
 - Gemini CLI, deterministic mock, and custom command modes
 - Per-job detached Git worktrees that preserve dirty and untracked source files
 - Complete binary Git patches relative to the source repository's `HEAD`
+- Authenticated patch downloads with the exact baseline commit and safe apply steps
 - Worker-observed changed files and configured verification results
 - Live log batching, request timeouts, retries, and durable result replay
 - Job attempts, leases, heartbeats, stale-worker recovery, and running cancellation
@@ -91,6 +92,22 @@ Start the worker:
 Create a task in the browser. The default route is worker `local`, repository alias `default`.
 
 For a deterministic first run, use `--agent mock` with `examples/demo-repo` and the task `Fix app.py so add returns a + b`.
+
+## Apply a returned patch
+
+Open the completed job and select **Download .patch**. The receipt shows the exact baseline commit used by the worker.
+
+Commit or stash unrelated local changes, change into the configured workspace, and inspect the patch before applying it:
+
+```bash
+git apply --stat /path/to/deaddrop-job-42.patch
+git apply --check /path/to/deaddrop-job-42.patch
+git apply /path/to/deaddrop-job-42.patch
+```
+
+Run the project verification again, review `git diff`, and commit only when the result is acceptable. If the branch has moved since the displayed baseline, inspect the patch first and use `git apply --3way` only when you are prepared to resolve conflicts.
+
+Authenticated API clients can download the same artifact from `GET /api/jobs/{job_id}/patch` with the owner bearer token.
 
 ## Workspace configuration
 

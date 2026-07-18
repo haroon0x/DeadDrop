@@ -8,6 +8,7 @@
     <div><dt>Updated</dt><dd>{{ job.updated_at }}</dd></div>
     <div><dt>Started</dt><dd>{{ job.started_at or "not started" }}</dd></div>
     <div><dt>Completed</dt><dd>{{ job.completed_at or "not complete" }}</dd></div>
+    <div><dt>Baseline</dt><dd>{% if job.baseline_commit %}<code title="{{ job.baseline_commit }}">{{ job.baseline_commit[:12] }}</code>{% else %}n/a{% endif %}</dd></div>
     <div><dt>Exit code</dt><dd>{{ job.exit_code if job.exit_code is not none else "n/a" }}</dd></div>
   </dl>
   {% if job.status in ["queued", "running"] and not job.cancel_requested_at %}
@@ -69,9 +70,27 @@
   {% elif job.final_summary %}
   <pre class="summary">{{ job.final_summary }}</pre>
   {% endif %}
-  {% if job.git_diff %}<p class="muted">No commit was created. Review the diff before accepting changes locally.</p>{% endif %}
+  {% if job.git_diff %}<p class="muted">No commit was created. Download and inspect the patch before accepting changes locally.</p>{% endif %}
   {% if job.error_message %}<pre class="error-box">{{ job.error_message }}</pre>{% endif %}
 </section>
+
+{% if job.git_diff %}
+<section class="panel patch-handoff">
+  <div class="handoff-head">
+    <div>
+      <p class="eyebrow">Patch handoff</p>
+      <h2>Take the result back to your workspace</h2>
+    </div>
+    <a class="button" href="/jobs/{{ job.id }}/patch">Download .patch</a>
+  </div>
+  <p>Run these commands from the configured workspace after committing or stashing unrelated local changes.</p>
+  <pre class="handoff-commands">git apply --stat /path/to/deaddrop-job-{{ job.id }}.patch
+git apply --check /path/to/deaddrop-job-{{ job.id }}.patch
+git apply /path/to/deaddrop-job-{{ job.id }}.patch</pre>
+  {% if job.baseline_commit %}<p class="muted">This patch was produced from <code>{{ job.baseline_commit }}</code>. If your branch has moved, inspect the diff and use <code>git apply --3way</code> only when you are prepared to resolve conflicts.</p>{% endif %}
+  <p class="muted">Run your project verification again after applying. DeadDrop never stages, commits, or pushes the result for you.</p>
+</section>
+{% endif %}
 
 <section class="panel">
   <details class="log-details" {% if job.status == "running" %}open{% endif %}>

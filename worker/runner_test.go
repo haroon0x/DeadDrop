@@ -311,6 +311,9 @@ func TestJobWorkspaceCapturesPatchWithoutChangingSource(t *testing.T) {
 	if !strings.Contains(diff, "+after") || !strings.Contains(diff, "new.txt") {
 		t.Fatalf("expected tracked and untracked changes in patch, got %q", diff)
 	}
+	if !strings.HasSuffix(diff, "\n") {
+		t.Fatalf("expected patch to retain its trailing newline, got %q", diff)
+	}
 	changedFiles, err := captureChangedFiles(workspace.WorkspacePath, workspace.BaseCommit)
 	if err != nil {
 		t.Fatal(err)

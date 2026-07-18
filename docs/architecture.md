@@ -39,7 +39,7 @@ The FastAPI server:
 - recovers expired attempts before issuing more work
 - applies versioned Alembic migrations at startup
 
-The server stores `worker_name` and `repo_alias`, not local filesystem paths.
+The server stores `worker_name`, `repo_alias`, and the resulting baseline commit, not local filesystem paths.
 
 ## Worker responsibilities
 
@@ -55,7 +55,7 @@ The Go worker:
 - interrupts the agent process group after a cancellation request or timeout
 - runs trusted verification commands
 - derives changed files and a binary patch from Git
-- sends a terminal result or durably spools it for replay
+- sends the baseline commit with the terminal result or durably spools it for replay
 
 The worker processes one job at a time. This keeps local resource use and workspace ownership understandable.
 
@@ -112,6 +112,8 @@ After execution, the worker stages all changes only inside the temporary worktre
 This includes tracked edits, deletions, new files, binary files, and commits created by an agent. Paths are relative to the configured workspace. The temporary worktree is force-removed after result capture.
 
 DeadDrop returns a patch; it never applies the patch to the source workspace and never commits or pushes the source repository.
+
+The owner can download the stored patch as `deaddrop-job-<id>.patch`. The response requires owner authentication, disables shared caching, and includes the worker-observed baseline commit in the job receipt. Applying remains an explicit local action so a human can inspect repository state, run `git apply --check`, and decide whether a three-way apply is appropriate after the branch has moved.
 
 ## Receipts and verification
 

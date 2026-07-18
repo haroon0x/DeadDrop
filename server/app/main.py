@@ -177,7 +177,37 @@ def job_fragment(request: Request, job_id: int):
         job = get_job(conn, job_id, include_logs=True, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return templates.TemplateResponse(request, "_job_receipt.html", {"request": request, "job": job})
+    csrf_token = request.cookies.get("csrf_token")
+    return templates.TemplateResponse(request, "_job_receipt.html", {"request": request, "job": job, "csrf_token": csrf_token})
+
+
+def patch_response(job_id: int) -> Response:
+    with connect() as conn:
+        job = get_job(conn, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job["git_diff"]:
+        raise HTTPException(status_code=409, detail="Job has no patch")
+    return Response(
+        content=job["git_diff"],
+        media_type="text/x-diff",
+        headers={
+            "Content-Disposition": f'attachment; filename="deaddrop-job-{job_id}.patch"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.get("/jobs/{job_id}/patch")
+def download_job_patch(request: Request, job_id: int):
+    ensure_owner_page(request)
+    return patch_response(job_id)
+
+
+@app.get("/api/jobs/{job_id}/patch", dependencies=[Depends(require_owner)])
+def api_job_patch(job_id: int):
+    return patch_response(job_id)
 
 
 @app.get("/demo", response_class=HTMLResponse)
@@ -326,6 +356,7 @@ def cancel_running_attempt(conn, job: dict, body: CancelledJob, ts: str) -> dict
             final_summary=body.final_summary,
             receipt_json=body.receipt_json,
             git_diff=body.git_diff,
+            baseline_commit=body.baseline_commit,
             updated_at=ts,
             completed_at=ts,
             heartbeat_at=ts,
@@ -425,6 +456,7 @@ def complete_job(job_id: int, body: CompleteJob):
                     final_summary=body.final_summary,
                     receipt_json=body.receipt_json,
                     git_diff=body.git_diff,
+                    baseline_commit=body.baseline_commit,
                 ),
                 ts,
             )
@@ -437,6 +469,7 @@ def complete_job(job_id: int, body: CompleteJob):
                 final_summary=body.final_summary,
                 receipt_json=body.receipt_json,
                 git_diff=body.git_diff,
+                baseline_commit=body.baseline_commit,
                 updated_at=ts,
                 completed_at=ts,
                 heartbeat_at=ts,
@@ -482,6 +515,7 @@ def fail_job(job_id: int, body: FailJob):
                     final_summary=body.final_summary,
                     receipt_json=body.receipt_json,
                     git_diff=body.git_diff,
+                    baseline_commit=body.baseline_commit,
                 ),
                 ts,
             )
@@ -495,6 +529,7 @@ def fail_job(job_id: int, body: FailJob):
                 final_summary=body.final_summary,
                 receipt_json=body.receipt_json,
                 git_diff=body.git_diff,
+                baseline_commit=body.baseline_commit,
                 updated_at=ts,
                 completed_at=ts,
                 heartbeat_at=ts,
