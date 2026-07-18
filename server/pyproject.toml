@@ -4,12 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi",
-    "httpx",
-    "jinja2",
+    "fastapi>=0.139.2",
+    "jinja2>=3.1.6",
     "psycopg[binary]",
-    "pytest",
-    "python-multipart",
+    "python-multipart>=0.0.32",
     "sqlalchemy",
     "uvicorn[standard]",
 ]
+
+[dependency-groups]
+dev = ["httpx", "pip-audit", "pytest>=9.1.1"]

@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd server
-          uv sync
+          uv sync --frozen
       - name: Run tests
         run: |
           cd server
@@ -31,6 +31,10 @@ jobs:
           export DATABASE_URL=sqlite:///:memory:
           export SECURE_COOKIES=false
           uv run pytest
+      - name: Audit dependencies
+        run: |
+          cd server
+          uv run pip-audit
 
   worker-tests:
     runs-on: ubuntu-latest

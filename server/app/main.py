@@ -70,16 +70,16 @@ def ensure_owner_page(request: Request) -> None:
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     if not owner_from_request(request):
-        return templates.TemplateResponse("landing.html", {"request": request})
+        return templates.TemplateResponse(request, "landing.html", {"request": request})
     with connect() as conn:
         rows = list_job_records(conn)
     csrf_token = request.cookies.get("csrf_token")
-    return templates.TemplateResponse("dashboard.html", {"request": request, "jobs": rows, "csrf_token": csrf_token})
+    return templates.TemplateResponse(request, "dashboard.html", {"request": request, "jobs": rows, "csrf_token": csrf_token})
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": ""})
+    return templates.TemplateResponse(request, "login.html", {"request": request, "error": ""})
 
 
 @app.post("/login")
@@ -87,7 +87,7 @@ def login(request: Request, token: str = Form(...)):
     from .auth import owner_token
 
     if not compare_digest(token, owner_token()):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid token"}, status_code=401)
+        return templates.TemplateResponse(request, "login.html", {"request": request, "error": "Invalid token"}, status_code=401)
     response = RedirectResponse("/", status_code=303)
     # 1. Set Owner Token
     response.set_cookie(
@@ -122,7 +122,7 @@ def logout():
 def new_job_page(request: Request):
     ensure_owner_page(request)
     csrf_token = request.cookies.get("csrf_token")
-    return templates.TemplateResponse("new_job.html", {"request": request, "csrf_token": csrf_token})
+    return templates.TemplateResponse(request, "new_job.html", {"request": request, "csrf_token": csrf_token})
 
 
 @app.post("/jobs", dependencies=[Depends(verify_csrf_token)])
@@ -147,7 +147,7 @@ def job_detail_page(request: Request, job_id: int):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     csrf_token = request.cookies.get("csrf_token")
-    return templates.TemplateResponse("job_detail.html", {"request": request, "job": job, "csrf_token": csrf_token})
+    return templates.TemplateResponse(request, "job_detail.html", {"request": request, "job": job, "csrf_token": csrf_token})
 
 
 @app.post("/jobs/{job_id}/cancel", dependencies=[Depends(verify_csrf_token)])
@@ -166,12 +166,12 @@ def job_fragment(request: Request, job_id: int):
         job = get_job(conn, job_id, include_logs=True, before_log_id=before_log_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return templates.TemplateResponse("_job_receipt.html", {"request": request, "job": job})
+    return templates.TemplateResponse(request, "_job_receipt.html", {"request": request, "job": job})
 
 
 @app.get("/demo", response_class=HTMLResponse)
 def demo(request: Request):
-    return templates.TemplateResponse("demo.html", {"request": request})
+    return templates.TemplateResponse(request, "demo.html", {"request": request})
 
 
 @app.post("/api/jobs", dependencies=[Depends(require_owner)])
