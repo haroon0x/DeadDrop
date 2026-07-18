@@ -18,7 +18,8 @@
 </p>
 
 <p align="center">
-  <a href="#the-five-minute-proof">Quickstart</a>
+  <a href="https://deaddrop-dpk8.onrender.com">Live site</a>
+  · <a href="#the-five-minute-proof">Quickstart</a>
   · <a href="#how-it-works">How it works</a>
   · <a href="#why-deaddrop">Why DeadDrop</a>
   · <a href="#security-model">Security</a>
@@ -381,7 +382,7 @@ Follow [todo.md](todo.md) for the next release work and [updates](server/app/tem
 | Guide | What it answers |
 | --- | --- |
 | [Architecture](docs/architecture.md) | How jobs, attempts, worktrees, receipts, and recovery fit together |
-| [Deployment](docs/deployment.md) | How to run Compose, managed PostgreSQL, secrets, backups, and upgrades |
+| [Deployment](docs/deployment.md) | How to run Compose or the Render web service with Supabase, secrets, backups, and upgrades |
 | [Worker service](docs/worker-service.md) | How to keep the worker alive across reboots |
 | [Release process](docs/releases.md) | How binaries, checksums, tags, and compatibility are shipped |
 | [Demo script](docs/demo-script.md) | How to show the complete deterministic workflow |

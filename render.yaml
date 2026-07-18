@@ -5,7 +5,7 @@ services:
     dockerfilePath: server/Dockerfile
     dockerContext: server
     plan: free
-    healthCheckPath: /healthz
+    healthCheckPath: /readyz
     envVars:
       - key: OWNER_TOKEN
         sync: false

@@ -27,6 +27,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import OperationalError
 
 metadata = MetaData()
 
@@ -155,8 +156,19 @@ def connect():
 
 def init_db() -> None:
     config = migration_config()
-    with engine().connect() as conn:
-        tables = set(conn.dialect.get_table_names(conn))
+    try:
+        with engine().connect() as conn:
+            tables = set(conn.dialect.get_table_names(conn))
+    except OperationalError as exc:
+        detail = str(exc).lower()
+        if "pooler.supabase.com" in detail and "tenant/user" in detail and "not found" in detail:
+            raise RuntimeError(
+                "Supabase rejected DATABASE_URL because its pooler tenant does not exist. "
+                "In Render, replace DATABASE_URL with the complete Session pooler connection "
+                "string from Supabase Dashboard > Connect, using port 5432. Do not combine a "
+                "project username with another project's pooler host."
+            ) from None
+        raise
     if "jobs" in tables and "alembic_version" not in tables:
         command.stamp(config, "0001")
     command.upgrade(config, "head")
