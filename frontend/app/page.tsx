@@ -86,13 +86,15 @@ export default function Home() {
 
           <figure className="hero-figure">
             <Image
-              src="/img/evidence.webp"
-              alt="A device disassembled and laid out so every single component can be counted"
+              src="/img/receipt.webp"
+              alt="A printed DeadDrop receipt showing the baseline commit, changed files, verification results, and the returned patch"
               width={1600}
-              height={1200}
+              height={880}
               priority
             />
-            <figcaption className="label">Every part accounted for</figcaption>
+            <figcaption className="label">
+              What a finished job hands back
+            </figcaption>
           </figure>
         </div>
       </section>
@@ -125,6 +127,18 @@ export default function Home() {
             trusted and produces the evidence you review.
           </p>
         </div>
+        <figure className="sheet reveal">
+          <Image
+            src="/img/loop.webp"
+            alt="Technical drawing of the DeadDrop job path: browser to server, worker polling outbound, a detached worktree, and the receipt returning to the owner"
+            width={1600}
+            height={860}
+          />
+          <figcaption className="label">
+            The whole path on one sheet
+          </figcaption>
+        </figure>
+
         <div className="module steps reveal">
           {steps.map(([n, title, copy]) => (
             <article key={n}>

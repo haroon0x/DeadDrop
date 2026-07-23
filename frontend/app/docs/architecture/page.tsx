@@ -5,13 +5,6 @@ import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
 
 export const metadata: Metadata = { title: "Architecture" };
 
-const nodes: [string, string, string, string][] = [
-  ["01", "Browser", "Owner token, task control", "HTTPS"],
-  ["02", "FastAPI and PostgreSQL", "Jobs, attempts, logs, receipts", "Outbound poll"],
-  ["03", "Go worker", "Lease, execution, evidence", "Local only"],
-  ["04", "Git worktree", "Agent, verify, patch, remove", ""],
-];
-
 const principles: [string, string, string][] = [
   [
     "01",
@@ -52,16 +45,15 @@ export default function Architecture() {
       </section>
 
       <section className="band">
-        <div className="map reveal">
-          {nodes.map(([n, title, detail, edge], i) => (
-            <div key={n} className={i === 1 ? "on" : undefined}>
-              <span>{n}</span>
-              <strong>{title}</strong>
-              <small>{detail}</small>
-              {edge ? <em>{edge}</em> : null}
-            </div>
-          ))}
-        </div>
+        <figure className="sheet reveal">
+          <Image
+            src="/img/loop.webp"
+            alt="Technical drawing of the DeadDrop job path: browser to server, worker polling outbound, a detached worktree, and the receipt returning to the owner"
+            width={1600}
+            height={860}
+          />
+          <figcaption className="label">Job execution path</figcaption>
+        </figure>
       </section>
 
       <hr className="hr" />

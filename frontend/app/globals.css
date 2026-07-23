@@ -530,6 +530,22 @@ ol {
   font-size: clamp(28px, 3.5vw, 46px);
 }
 
+.sheet {
+  border: 1px solid var(--rule-2);
+  margin-bottom: clamp(24px, 2.6vw, 38px);
+}
+
+.sheet img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.sheet figcaption {
+  padding: 11px 16px;
+  border-top: 1px solid var(--rule-2);
+}
+
 .figure-block {
   position: relative;
 }
