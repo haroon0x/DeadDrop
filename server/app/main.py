@@ -81,7 +81,7 @@ def ensure_owner_page(request: Request) -> None:
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     if not owner_from_request(request):
-        return templates.TemplateResponse(request, "landing.html", {"request": request})
+        return RedirectResponse("/login", status_code=303)
     with connect() as conn:
         rows = list_job_records(conn)
     csrf_token = request.cookies.get("csrf_token")
@@ -225,46 +225,6 @@ def download_job_patch(request: Request, job_id: int):
 @app.get("/api/jobs/{job_id}/patch", dependencies=[Depends(require_owner)])
 def api_job_patch(job_id: int):
     return patch_response(job_id)
-
-
-@app.get("/demo", response_class=HTMLResponse)
-def demo(request: Request):
-    return templates.TemplateResponse(request, "demo.html", {"request": request})
-
-
-@app.get("/docs", response_class=HTMLResponse)
-def public_docs(request: Request):
-    return templates.TemplateResponse(request, "docs.html", {"request": request})
-
-
-@app.get("/docs/architecture", response_class=HTMLResponse)
-def public_architecture(request: Request):
-    return templates.TemplateResponse(request, "public_architecture.html", {"request": request})
-
-
-@app.get("/updates", response_class=HTMLResponse)
-def updates(request: Request):
-    return templates.TemplateResponse(request, "updates.html", {"request": request})
-
-
-@app.get("/blog", response_class=HTMLResponse)
-def blog(request: Request):
-    return templates.TemplateResponse(request, "blog.html", {"request": request})
-
-
-@app.get("/blog/disposable-worktrees", response_class=HTMLResponse)
-def disposable_worktrees_post(request: Request):
-    return templates.TemplateResponse(request, "blog_disposable_worktrees.html", {"request": request})
-
-
-@app.get("/blog/evidence-based-receipts", response_class=HTMLResponse)
-def evidence_receipts_post(request: Request):
-    return templates.TemplateResponse(request, "blog_evidence_receipts.html", {"request": request})
-
-
-@app.get("/blog/leases-for-local-agents", response_class=HTMLResponse)
-def leases_post(request: Request):
-    return templates.TemplateResponse(request, "blog_leases.html", {"request": request})
 
 
 def resolve_repo_alias(conn, requested: str) -> str:

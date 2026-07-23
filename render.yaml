@@ -5,6 +5,12 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: out
+    buildFilter:
+      paths:
+        - frontend/**
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
     headers:
       - path: /*
         name: X-Content-Type-Options
@@ -21,19 +27,3 @@ services:
       - path: /_next/static/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
-  - type: web
-    name: deaddrop
-    runtime: docker
-    dockerfilePath: server/Dockerfile
-    dockerContext: server
-    plan: free
-    healthCheckPath: /readyz
-    envVars:
-      - key: OWNER_TOKEN
-        sync: false
-      - key: WORKER_TOKEN
-        sync: false
-      - key: SECURE_COOKIES
-        value: true
-      - key: DATABASE_URL
-        sync: false

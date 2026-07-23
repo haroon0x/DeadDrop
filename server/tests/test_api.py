@@ -211,9 +211,8 @@ def test_structured_receipt_renders_as_sections():
 def test_browser_auth_uses_persistent_cookie_not_query_token():
     c = client()
     query_res = c.get("/?token=owner_test", follow_redirects=False)
-    assert query_res.status_code == 200
-    assert "Leave a task." in query_res.text
-    assert "Your local-agent task queue" not in query_res.text
+    assert query_res.status_code == 303
+    assert query_res.headers["location"] == "/login"
 
     login = c.post("/login", data={"token": "owner_test"}, follow_redirects=False)
     assert login.status_code == 303
@@ -406,20 +405,3 @@ def test_stale_job_is_reissued_with_new_attempt():
         json={"attempt_id": first["attempt_id"]},
     )
     assert stale_heartbeat.status_code == 409
-
-
-def test_public_project_pages_render():
-    c = client()
-    pages = {
-        "/docs": "From zero to a verified local-agent queue",
-        "/docs/architecture": "The server coordinates. The worker proves.",
-        "/updates": "Building the boring parts",
-        "/blog": "Notes on building agent infrastructure",
-        "/blog/disposable-worktrees": "Why every coding-agent job gets a disposable worktree",
-        "/blog/evidence-based-receipts": "A receipt should be evidence, not agent prose",
-        "/blog/leases-for-local-agents": "Leases make local agents recoverable",
-    }
-    for path, heading in pages.items():
-        response = c.get(path)
-        assert response.status_code == 200
-        assert heading in response.text
