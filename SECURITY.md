@@ -24,11 +24,34 @@ Operators must:
 - review returned patches before applying them
 - avoid placing DeadDrop control files or unrelated credentials inside agent workspaces
 
+### The verification step is the sharpest edge
+
+Verification is the weakest part of the trust model, and it is easy to miss
+because the commands themselves are yours.
+
+The agent edits files, and then DeadDrop **executes those files** with your
+commands. `go test ./...` or `npm test` runs code the agent just wrote, as the
+worker user, with whatever credentials that user has: SSH keys, cloud tokens,
+package registry credentials, a logged-in CLI session. Git worktree isolation
+does nothing about this, because the danger is not what the agent changed in the
+repository but what the resulting process can reach outside it.
+
+"DeadDrop never commits" is a real guarantee about your repository. It is not a
+guarantee about your machine.
+
+Until the verification step is sandboxed, treat every job as running untrusted
+code with your permissions:
+
+- run the worker as a dedicated user with the narrowest useful credentials
+- keep cloud, registry, and deployment credentials out of that user's environment
+- prefer a container, VM, or dedicated machine for the worker
+- consider cutting network access for the verification step
+
 Expected behavior, not a vulnerability:
 
 - the configured agent can read and modify files available to the worker user
 - custom commands can execute arbitrary local programs
-- verification commands are trusted local configuration
+- verification commands are trusted, but the code they execute is agent-authored
 - returned patches may contain malicious or incorrect code
 - Git worktree isolation does not restrict network or operating-system access
 

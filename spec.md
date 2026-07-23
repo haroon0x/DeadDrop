@@ -1,32 +1,54 @@
-# DeadDrop project specification
+# DeadDrop specification
 
-## Product definition
+> **What this document is.** A description of what the software does today and
+> what it promises. The promises are not enforced by this file. They are
+> enforced by `server/tests/test_invariants.py`, which tries to break each one.
+> If this document and that suite ever disagree, the suite is right.
+>
+> **What this document is not.** A list of things DeadDrop is forbidden to
+> become. Earlier revisions carried non-goals like "not a remote desktop" and
+> "no arbitrary remote shell access." Those were positioning statements, not
+> engineering constraints, and they quietly pre-rejected directions that
+> deserved to be argued on their merits. They have been removed. Decide
+> direction by reasoning about the artifact, not by consulting this file.
 
-DeadDrop is a self-hosted, local-first coding task inbox. An owner creates a job in a browser. A local worker polls outbound, runs a coding agent in an isolated Git worktree, verifies the result, and returns logs, a structured receipt, and a reviewable patch.
+## What it does
 
-The project is an open-source tool for individual developers and small trusted teams. It is not a hosted multi-user SaaS, remote desktop, general chatbot, or automatic code-merging system.
+An owner types a coding task into a web queue. A worker process on the
+developer's own machine polls that queue outbound, runs a coding-agent CLI
+against a throwaway copy of the repository, verifies the result with the
+developer's own commands, and returns logs, a receipt, and a patch. The human
+decides whether any of it lands.
 
-## Required properties
+## The promises
 
-- The server never stores local absolute repository paths.
-- The worker never requires an inbound connection.
-- Every modifying job runs outside the source workspace.
-- Dirty and untracked source files survive unchanged.
-- Every claim has one unique attempt and expiring lease.
-- A stale attempt cannot write logs or terminal results.
-- Running jobs can be cancelled through the outbound heartbeat path.
-- Terminal results survive temporary server unavailability.
-- Changed files, verification, and status come from worker evidence.
-- DeadDrop never commits, pushes, merges, or applies a patch automatically.
+Each of these is a named test in `server/tests/test_invariants.py`.
+
+| Promise | Why it matters |
+| --- | --- |
+| The server stores a repo alias, never an absolute path | The control plane never learns your filesystem layout |
+| Every worker interaction is worker-initiated | Nothing needs to reach into the developer's machine |
+| One claim owns a job; a superseded attempt cannot write logs or results | A worker that vanished and came back cannot corrupt newer work |
+| Repeated terminal delivery is idempotent | A retry after a network failure is safe |
+| Status comes from the observed exit code, not the agent's claim | An agent cannot declare its own success |
+| No route applies, commits, pushes, or merges | The human stays the only writer to the repository |
+| Owners can only route to repositories a worker registered | The worker's manifest is the trust boundary |
+
+Two further promises are enforced in the worker rather than the server, and are
+covered by `worker/runner_test.go`:
+
+- Jobs run in a detached worktree at the source commit, so uncommitted and
+  untracked files in the developer's checkout are never touched or captured.
+- Changed files and the patch come from `git diff` against the job baseline.
 
 ## Server
 
-- FastAPI, Jinja2, and SQLAlchemy
-- SQLite for development; PostgreSQL for durable deployment
+- FastAPI, Jinja2, SQLAlchemy Core
+- SQLite for development, PostgreSQL for durable deployment
 - Versioned Alembic migrations
 - Separate owner and worker bearer tokens
-- HTTP-only owner session cookie and CSRF-protected forms
-- Jobs, attempts, logs, worker registrations, receipts, and patches
+- HTTP-only owner session cookie, CSRF-protected forms
+- Jobs, attempts, logs, worker registrations, receipts, patches
 - Health and readiness endpoints
 
 ## Worker
@@ -34,11 +56,12 @@ The project is an open-source tool for individual developers and small trusted t
 - Go CLI distributed as source and release binaries
 - `init`, `run`, and `version` commands
 - Manifest-owned alias-to-path mapping
-- Gemini, custom, and deterministic mock agents
+- Agent presets for common coding CLIs, plus custom and mock modes
+  (see [docs/agents.md](docs/agents.md))
 - Detached worktree at source `HEAD`
 - Bounded agent and verification commands
 - Process-group termination on timeout or cancellation
-- Batched logs, HTTP timeouts, retries, and durable result spool
+- Batched logs, HTTP timeouts, retries, durable result spool
 - Five-second heartbeats against a sixty-second lease
 
 ## Job lifecycle
@@ -51,39 +74,22 @@ queued -> running -> completed
 running + expired lease -> lost attempt -> queued
 ```
 
-Every re-claim increments `attempt_number`. Worker writes carry `attempt_id`. Same-attempt terminal delivery is idempotent.
+Every re-claim increments `attempt_number`. Worker writes carry `attempt_id`.
+Same-attempt terminal delivery is idempotent.
 
 ## Receipt contract
 
-The agent returns JSON containing:
+The agent may return JSON containing `status`, `summary`, `changed_files`,
+`verification`, `blockers`, and `notes`.
 
-- `status`
-- `summary`
-- `changed_files`
-- `verification`
-- `blockers`
-- `notes`
+The worker then **replaces** `status`, `changed_files`, and `verification` with
+what it observed, and keeps only the prose fields from the agent. That is the
+whole trust model in one sentence: the agent narrates, the worker adjudicates.
 
-The worker validates the structure and replaces `status`, `changed_files`, and `verification` with observed evidence before sending it to the server. A zero-exit agent without a valid structured receipt fails.
+## Known weakness
 
-## Public project surface
-
-- Product landing page
-- Operator quickstart documentation
-- Public architecture explanation
-- Project updates
-- Technical blog
-- Contributor, support, security, and release policies
-- Durable Compose deployment
-- Tagged cross-platform worker releases with checksums
-
-## Explicit non-goals
-
-- OAuth and multi-user authorization
-- billing
-- arbitrary remote shell access
-- server-selected local paths
-- repository indexing
-- operating-system sandboxing
-- automatic patch acceptance
-- automatic commits, pushes, or merges
+Verification runs agent-authored code on the developer's machine with the
+developer's ambient credentials. Git isolation does not help here: a test suite
+the agent just edited can read anything the worker user can read. Sandboxing
+this step is the most valuable outstanding security work. See
+[SECURITY.md](SECURITY.md).

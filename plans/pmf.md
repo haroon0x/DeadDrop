@@ -1,13 +1,18 @@
-# DeadDrop — Path to Product-Market Fit
+# DeadDrop — who this is for
 
-> **Written at**: commit `ea6c3f9`, 2026-06-11.
-> Companion to [000-product-roadmap.md](000-product-roadmap.md) — that file is
-> *what to build*; this file is *who it's for, why they'd switch, and how to
-> find out cheaply whether they will*.
+> **Status: early thinking, kept because the problem statement still rings
+> true.** Written 2026-06-11. This is the one planning document worth keeping:
+> it describes a real person with a real frustration. Treat it as an argument,
+> not a finding. Nobody has been interviewed.
 >
-> Market-landscape claims below reflect the author's knowledge as of early
-> 2026. **Re-verify the competitive section in the week before any launch** —
-> this space moves monthly.
+> **Deliberately unverified:** the competitive section predates the current
+> wave of official remote-agent products and moves monthly. Re-check it before
+> making any decision that depends on it.
+>
+> The companion roadmap and executor plans that used to live beside this file
+> were removed. They had gone stale, and their "rejected findings" list was
+> quietly closing off directions that deserved to be argued on their merits.
+> Current priorities live in [`todo.md`](../todo.md).
 
 ---
 

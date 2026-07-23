@@ -44,6 +44,22 @@ cd ..
 server/.venv/bin/python -m pytest -q e2e
 ```
 
+## What must not break
+
+`server/tests/test_invariants.py` is the shortest useful description of what
+DeadDrop promises. Each test names one promise and tries to break it: the server
+never learning a filesystem path, a superseded attempt never writing, an agent
+never declaring its own success, no route ever applying a patch.
+
+Read that file before a first change. If your work makes one of those tests
+fail, you have either found a bug or changed what the project is. Both are
+worth a conversation in the pull request, and neither should be fixed by
+loosening the test quietly.
+
+Everything else in this repository is an opinion, including the roadmap. If you
+think a direction is wrong, argue it on the merits rather than citing a
+document.
+
 ## Change expectations
 
 - Keep the server unaware of local absolute repository paths.
