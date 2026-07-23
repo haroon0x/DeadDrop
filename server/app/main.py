@@ -133,7 +133,19 @@ def logout():
 def new_job_page(request: Request):
     ensure_owner_page(request)
     csrf_token = request.cookies.get("csrf_token")
-    return templates.TemplateResponse(request, "new_job.html", {"request": request, "csrf_token": csrf_token})
+    with connect() as conn:
+        repos = list_worker_repos(conn)
+    return templates.TemplateResponse(
+        request,
+        "new_job.html",
+        {
+            "request": request,
+            "csrf_token": csrf_token,
+            "repos": repos,
+            "agents": models.AGENTS,
+            "default_repo": DEFAULT_REPO_ALIAS,
+        },
+    )
 
 
 @app.post("/jobs", dependencies=[Depends(verify_csrf_token)])
@@ -141,9 +153,14 @@ def create_job_form(
     request: Request,
     title: str = Form(...),
     prompt: str = Form(...),
+    repo_alias: str = Form(DEFAULT_REPO_ALIAS),
+    agent: str = Form(models.DEFAULT_AGENT),
 ):
     ensure_owner_page(request)
-    job = JobCreate(title=title, prompt=prompt)
+    try:
+        job = JobCreate(title=title, prompt=prompt, repo_alias=repo_alias, agent=agent)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     created = create_job(job)
     return RedirectResponse(f"/jobs/{created['id']}", status_code=303)
 
@@ -250,6 +267,24 @@ def leases_post(request: Request):
     return templates.TemplateResponse(request, "blog_leases.html", {"request": request})
 
 
+def resolve_repo_alias(conn, requested: str) -> str:
+    """Owners may only target repositories a worker has actually registered.
+
+    The manifest is the trust boundary, so routing stays bounded by what the
+    worker opted in to rather than by whatever an owner token asks for.
+    """
+    alias = (requested or DEFAULT_REPO_ALIAS).strip()
+    if alias == DEFAULT_REPO_ALIAS:
+        return alias
+    known = {row["repo_alias"] for row in list_worker_repos(conn)}
+    if alias not in known:
+        raise HTTPException(
+            status_code=422,
+            detail=f"repo_alias {alias!r} is not registered by any worker",
+        )
+    return alias
+
+
 @app.post("/api/jobs", dependencies=[Depends(require_owner)])
 def create_job(job: JobCreate):
     ts = now_iso()
@@ -259,8 +294,9 @@ def create_job(job: JobCreate):
             {
                 "title": job.title,
                 "prompt": job.prompt,
-                "repo_alias": DEFAULT_REPO_ALIAS,
+                "repo_alias": resolve_repo_alias(conn, job.repo_alias),
                 "worker_name": DEFAULT_WORKER_NAME,
+                "agent": job.agent or None,
                 "status": models.QUEUED,
                 "created_at": ts,
                 "updated_at": ts,

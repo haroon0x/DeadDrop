@@ -10,10 +10,33 @@
       Title
       <input name="title" required placeholder="Fix failing demo test">
     </label>
+    <div class="field-row">
+      <label>
+        Repository
+        {% if repos %}
+        <select name="repo_alias">
+          {% for repo in repos %}
+          <option value="{{ repo.repo_alias }}"{% if repo.repo_alias == default_repo %} selected{% endif %}>{{ repo.display_name or repo.repo_alias }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input name="repo_alias" value="{{ default_repo }}">
+        {% endif %}
+      </label>
+      <label>
+        Coding agent
+        <select name="agent">
+          {% for value, label in agents.items() %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
     <label>
       Task prompt
       <textarea name="prompt" required rows="10" placeholder="Fix the failing test in the demo repo. Do not commit."></textarea>
     </label>
+    <p class="muted">The worker must already have the chosen CLI installed. Leave this on the worker default to use whatever it was started with.</p>
     <button type="submit">Drop a task</button>
   </form>
 </section>

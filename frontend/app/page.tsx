@@ -86,14 +86,14 @@ export default function Home() {
 
           <figure className="hero-figure">
             <Image
-              src="/img/receipt.webp"
-              alt="A printed DeadDrop receipt showing the baseline commit, changed files, verification results, and the returned patch"
+              src="/img/converge.webp"
+              alt="An abstract plotter drawing of many parallel paths converging through a single narrow channel and fanning out again"
               width={1600}
               height={880}
               priority
             />
             <figcaption className="label">
-              What a finished job hands back
+              Many tasks in. One attempt at a time. Evidence out.
             </figcaption>
           </figure>
         </div>

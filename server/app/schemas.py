@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from . import models
 
 
 class JobCreate(BaseModel):
@@ -6,6 +8,24 @@ class JobCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=20000)
     repo_alias: str = "default"
     worker_name: str = "local"
+    agent: str = models.DEFAULT_AGENT
+
+    @field_validator("agent")
+    @classmethod
+    def known_agent(cls, value: str) -> str:
+        value = value.strip()
+        if value not in models.AGENTS:
+            allowed = ", ".join(sorted(name for name in models.AGENTS if name))
+            raise ValueError(f"unknown agent {value!r}; allowed: {allowed}")
+        return value
+
+    @field_validator("repo_alias", "worker_name")
+    @classmethod
+    def non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
 
 
 class LogCreate(BaseModel):

@@ -4,6 +4,7 @@
     <div><dt>Status</dt><dd><span class="badge {{ job.status }}">{{ job.status }}</span></dd></div>
     <div><dt>Worker</dt><dd>{{ job.worker_name }}</dd></div>
     <div><dt>Repo</dt><dd>{{ job.repo_alias }}</dd></div>
+    <div><dt>Agent</dt><dd>{{ job.agent or "worker default" }}</dd></div>
     <div><dt>Created</dt><dd>{{ job.created_at[:16] | replace("T", " ") }}</dd></div>
     <div><dt>Updated</dt><dd>{{ job.updated_at[:16] | replace("T", " ") }}</dd></div>
     <div><dt>Started</dt><dd>{{ (job.started_at[:16] | replace("T", " ")) if job.started_at else "not started" }}</dd></div>

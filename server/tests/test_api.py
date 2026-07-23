@@ -130,7 +130,9 @@ def test_owner_can_download_patch():
     assert ("b" * 40) in page.text
 
 
-def test_new_job_page_hides_repo_and_worker_choice():
+def test_new_job_page_offers_registered_repos_but_never_worker_choice():
+    """Owners pick among repositories a worker registered. Worker selection
+    stays server-controlled."""
     c = client()
     c.post(
         "/api/worker/register",
@@ -139,23 +141,32 @@ def test_new_job_page_hides_repo_and_worker_choice():
     )
     res = c.get("/jobs/new", cookies={"owner_token": "owner_test"})
     assert res.status_code == 200
-    assert 'name="repo_alias"' not in res.text
+    assert 'name="repo_alias"' in res.text
+    assert "Demo repo" in res.text
     assert 'name="worker_name"' not in res.text
-    assert ">Worker<" not in res.text
-    assert ">Repo<" not in res.text
 
 
-def test_owner_supplied_job_routing_is_ignored():
+def test_owner_cannot_route_to_an_unregistered_repo():
+    """The manifest is the trust boundary. An owner token may not invent an
+    alias no worker has opted in to."""
     c = client()
     create = c.post(
         "/api/jobs",
         headers=owner_headers(),
-        json={"title": "Route", "prompt": "No-op", "repo_alias": "other", "worker_name": "other"},
+        json={"title": "Route", "prompt": "No-op", "repo_alias": "other"},
+    )
+    assert create.status_code == 422
+
+
+def test_owner_supplied_worker_name_is_still_ignored():
+    c = client()
+    create = c.post(
+        "/api/jobs",
+        headers=owner_headers(),
+        json={"title": "Route", "prompt": "No-op", "worker_name": "other"},
     )
     assert create.status_code == 200
-    body = create.json()
-    assert body["repo_alias"] == "default"
-    assert body["worker_name"] == "local"
+    assert create.json()["worker_name"] == "local"
 
 
 def test_structured_receipt_renders_as_sections():

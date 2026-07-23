@@ -48,6 +48,7 @@ jobs = Table(
     Column("title", String(160), nullable=False),
     Column("prompt", Text, nullable=False),
     Column("repo_alias", Text, nullable=False, default="default"),
+    Column("agent", Text),
     Column("worker_name", Text, nullable=False, default="local"),
     Column("status", Text, nullable=False),
     Column("created_at", Text, nullable=False),

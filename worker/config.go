@@ -61,7 +61,7 @@ func parseConfig(args []string) (Config, error) {
 	fs.StringVar(&cfg.Repo, "repo", "", "local repo path")
 	fs.StringVar(&cfg.RepoAlias, "repo-alias", "default", "repo alias accepted by this worker")
 	fs.StringVar(&cfg.Manifest, "manifest", "", "workspace manifest JSON path")
-	fs.StringVar(&cfg.Agent, "agent", "gemini", "agent mode: mock, gemini, custom")
+	fs.StringVar(&cfg.Agent, "agent", "gemini", "agent mode: mock, gemini, custom, or a preset (claude, codex, aider, cursor, opencode)")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "log command without running it")
 	fs.BoolVar(&cfg.RunOnce, "run-once", false, "poll once, process at most one job, then exit")
 	fs.StringVar(&cfg.CommandTemplate, "command-template", "", "custom command template")

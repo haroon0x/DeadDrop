@@ -72,24 +72,46 @@ func runJob(ctx context.Context, cfg Config, c Client, job Job) RunResult {
 	logGitStatus(ctx, repo.Path, c, job.ID)
 	prompt := buildPrompt(repo.Path, repo.Alias, job.Prompt)
 
+	// A job may name the agent it wants. The worker still decides whether it
+	// can honour that, since only the worker knows which CLIs are installed.
+	agent := cfg.Agent
+	commandTemplate := cfg.CommandTemplate
+	if job.Agent != "" && job.Agent != cfg.Agent {
+		if _, ok := presetTemplate(job.Agent); ok || job.Agent == "mock" || job.Agent == "gemini" {
+			c.Log(job.ID, "system", "Job requested agent "+job.Agent+", overriding worker default "+cfg.Agent)
+			agent = job.Agent
+			commandTemplate = ""
+		} else {
+			c.Log(job.ID, "system", "Job requested unknown agent "+job.Agent+", using worker default "+cfg.Agent)
+		}
+	}
+
 	var command CommandResult
 	err = nil
-	switch cfg.Agent {
+	switch agent {
 	case "mock":
 		command, err = runMock(ctx, cfg, repo, c, job.ID)
 	case "gemini":
-		if cfg.CommandTemplate == "" {
+		if commandTemplate == "" {
 			command, err = runGemini(ctx, cfg, repo, c, job.ID, prompt)
 		} else {
-			command, err = runTemplate(ctx, cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
+			command, err = runTemplate(ctx, cfg, repo, c, job.ID, commandTemplate, prompt, job.Prompt)
 		}
 	case "custom":
-		if cfg.CommandTemplate == "" {
+		if commandTemplate == "" {
 			return finish(cfg, c, job.ID, 1, "--command-template is required for custom agent", "")
 		}
-		command, err = runTemplate(ctx, cfg, repo, c, job.ID, cfg.CommandTemplate, prompt, job.Prompt)
+		command, err = runTemplate(ctx, cfg, repo, c, job.ID, commandTemplate, prompt, job.Prompt)
 	default:
-		return finish(cfg, c, job.ID, 1, "unknown agent mode: "+cfg.Agent, "")
+		template := commandTemplate
+		if template == "" {
+			preset, ok := presetTemplate(agent)
+			if !ok {
+				return finish(cfg, c, job.ID, 1, "unknown agent mode: "+agent+" (known: "+strings.Join(knownAgents(), ", ")+")", "")
+			}
+			template = preset
+		}
+		command, err = runTemplate(ctx, cfg, repo, c, job.ID, template, prompt, job.Prompt)
 	}
 	if err == nil && command.ExitCode == 0 && len(repo.Verify) > 0 {
 		checks, verifyCode, verifyErr := runVerification(ctx, cfg, repo, c, job.ID)
@@ -119,7 +141,7 @@ func runJob(ctx context.Context, cfg Config, c Client, job Job) RunResult {
 	status := captureGitStatus(repo.Path)
 	c.Log(job.ID, "system", "Final git status:\n"+status)
 	receiptSource := command.Output
-	if cfg.Agent == "gemini" && cfg.CommandTemplate == "" {
+	if agent == "gemini" && commandTemplate == "" {
 		var parseErr error
 		receiptSource, parseErr = geminiResponseText(command.Output)
 		if parseErr != nil && err == nil {
@@ -128,7 +150,7 @@ func runJob(ctx context.Context, cfg Config, c Client, job Job) RunResult {
 			c.Log(job.ID, "system", parseErr.Error())
 		}
 	}
-	summary, receiptJSON, hasReceipt := buildSummary(cfg.Agent, repo.Alias, command.ExitCode, receiptSource)
+	summary, receiptJSON, hasReceipt := buildSummary(agent, repo.Alias, command.ExitCode, receiptSource)
 	if receiptJSON != "" {
 		var receiptErr error
 		receiptJSON, receiptErr = authoritativeReceiptJSON(receiptJSON, command.ExitCode, changedFiles, command.Verification)

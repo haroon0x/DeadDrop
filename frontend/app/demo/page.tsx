@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, CheckSquareOffset } from "@phosphor-icons/react/dist/ssr";
 
@@ -32,6 +33,18 @@ export default function Demo() {
       </section>
 
       <section className="band">
+        <figure className="sheet reveal">
+          <Image
+            src="/img/receipt.webp"
+            alt="A printed DeadDrop receipt showing the baseline commit, changed files, verification results, and the returned patch"
+            width={1600}
+            height={880}
+          />
+          <figcaption className="label">
+            The receipt as a single printable sheet
+          </figcaption>
+        </figure>
+
         <div className="ledger reveal" style={{ marginBottom: 40 }}>
           <div>
             <dt>Job 184</dt>

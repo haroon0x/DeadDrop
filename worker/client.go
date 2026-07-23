@@ -43,6 +43,7 @@ type Job struct {
 	WorkerName string `json:"worker_name"`
 	Status     string `json:"status"`
 	AttemptID  string `json:"attempt_id"`
+	Agent      string `json:"agent"`
 }
 
 type RepoRegistration struct {
