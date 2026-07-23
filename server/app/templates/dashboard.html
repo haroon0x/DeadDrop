@@ -20,8 +20,7 @@
     </div>
     <div class="meta">
       <span class="badge {{ job.status }}">{{ job.status }}</span>
-      <span>{{ job.created_at }}</span>
-      <span>{{ job.updated_at }}</span>
+      <span>Updated {{ job.updated_at[:16] | replace("T", " ") }}</span>
     </div>
   </a>
   {% endfor %}

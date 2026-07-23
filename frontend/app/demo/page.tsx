@@ -1,4 +1,96 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight, CheckSquareOffset } from "@phosphor-icons/react/dist/ssr";
 
 export const metadata: Metadata = { title: "Demo receipt" };
-export default function Demo(){return <><section className="page-hero"><p className="eyebrow">Demo receipt</p><h1>See the evidence before running a worker.</h1><p>This static example shows the shape of a completed DeadDrop job.</p></section><section className="section demo"><div className="job-title"><div><p className="eyebrow">Job #184</p><h2>Fix the failing add test</h2></div><b>completed</b></div><div className="demo-panel"><h3>Receipt</h3><div className="demo-grid"><article><small>Result</small><strong>Corrected the add implementation and verified the focused test suite.</strong><p>The source workspace was not modified.</p></article><article><small>Changed files</small><code>app.py</code></article><article><small>Verification</small><strong>python -m pytest</strong><b>passed · exit 0</b></article></div></div><div className="demo-panel"><h3>Worker evidence</h3><pre><code>{`system  Created isolated Git worktree\nstdout  test_app.py . [100%]\nsystem  Reporting completed result\n\ndiff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b`}</code></pre></div></section></>}
+
+const log = `system  created isolated Git worktree at baseline 4c17e02
+agent   editing app.py
+verify  python -m pytest
+stdout  test_app.py .                                    [100%]
+verify  exit 0
+system  captured binary patch, 1 file changed
+system  reporting completed result`;
+
+const patch = `diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,2 +1,2 @@
+ def add(a, b):
+-    return a - b
++    return a + b`;
+
+export default function Demo() {
+  return (
+    <div className="shell">
+      <section className="page-hero">
+        <p className="label label-acid bracket">Demo receipt</p>
+        <h1 className="d2">See the evidence before running a worker.</h1>
+        <p className="lede">
+          A static example showing the exact shape of a completed DeadDrop job.
+        </p>
+      </section>
+
+      <section className="band">
+        <div className="ledger reveal" style={{ marginBottom: 40 }}>
+          <div>
+            <dt>Job 184</dt>
+            <dd>Fix the failing add test</dd>
+          </div>
+        </div>
+
+        <div className="demo-grid reveal">
+          <article>
+            <span className="pill">
+              <CheckSquareOffset size={13} weight="bold" />
+              Completed
+            </span>
+            <strong>
+              Corrected the add implementation and verified the focused test
+              suite.
+            </strong>
+            <p>The source workspace was not modified.</p>
+          </article>
+          <article>
+            <span className="label">Changed files</span>
+            <code>app.py</code>
+            <p>Derived from the baseline-relative Git diff, not the summary.</p>
+          </article>
+          <article>
+            <span className="label">Verification</span>
+            <strong>python -m pytest</strong>
+            <p>Passed, exit 0, observed by the worker.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="band" style={{ paddingTop: 0 }}>
+        <div className="split reveal" style={{ alignItems: "start" }}>
+          <div>
+            <p className="label" style={{ marginBottom: 14 }}>
+              Worker log
+            </p>
+            <pre>
+              <code>{log}</code>
+            </pre>
+          </div>
+          <div>
+            <p className="label" style={{ marginBottom: 14 }}>
+              Returned patch
+            </p>
+            <pre>
+              <code>{patch}</code>
+            </pre>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 44 }}>
+          <Link className="btn" href="/docs">
+            Run it yourself
+            <ArrowRight size={14} weight="bold" />
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}

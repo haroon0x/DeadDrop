@@ -1,30 +1,384 @@
+import Image from "next/image";
 import Link from "next/link";
+import {
+  ArrowRight,
+  ArrowsClockwise,
+  CheckSquareOffset,
+  HardDrives,
+  Prohibit,
+  ShieldCheck,
+  TreeStructure,
+} from "@phosphor-icons/react/dist/ssr";
+import { articles } from "@/lib/articles";
+import { marks } from "@/lib/marks";
 
-const steps = [
-  ["01", "Drop a task", "Use the private browser inbox from your phone or desktop. The server stores an alias, never your local path."],
-  ["02", "Claim with a lease", "Your worker polls outbound, receives a unique attempt, and keeps ownership alive with heartbeats."],
-  ["03", "Work in isolation", "The agent runs in a detached worktree at source HEAD. Local edits and untracked files stay outside."],
-  ["04", "Review the evidence", "DeadDrop returns logs, verification, changed files, and a binary patch. It never commits or merges."],
+const steps: [string, string, string][] = [
+  [
+    "01",
+    "Drop a task",
+    "Use the private browser inbox from your phone or desktop. The server stores an alias, never your local path.",
+  ],
+  [
+    "02",
+    "Claim with a lease",
+    "Your worker polls outbound, receives a unique attempt, and keeps ownership alive with heartbeats.",
+  ],
+  [
+    "03",
+    "Work in isolation",
+    "The agent runs in a detached worktree at source HEAD. Local edits and untracked files stay outside.",
+  ],
+  [
+    "04",
+    "Review the evidence",
+    "DeadDrop returns logs, verification, changed files, and a binary patch. It never commits or merges.",
+  ],
 ];
 
-const features = [
-  ["↻", "Recoverable attempts", "Expired leases requeue work. Stale workers cannot overwrite a newer attempt."],
-  ["✓", "Evidence-based receipts", "Changed files come from Git. Verification comes from commands the worker actually ran."],
-  ["⇣", "Durable result replay", "Network failure stores terminal results locally and replays them before more work is claimed."],
-  ["×", "Real cancellation", "A running cancellation reaches the heartbeat loop and kills the local command process group."],
-  ["↗", "Outbound only", "No tunnel and no inbound port on your developer machine. The worker initiates every connection."],
-  ["⌁", "Self-hosted state", "Run FastAPI with durable PostgreSQL using Compose or your preferred hosting provider."],
-];
+const transcript = [
+  ["system", "resolved baseline 9f2c1ab on route alias default"],
+  ["system", "created detached worktree /tmp/deaddrop-job-184/workspace"],
+  ["agent", "editing server/app/results.py"],
+  ["verify", "go test ./... "],
+  ["stdout", "ok  deaddrop/worker/internal/result  0.412s"],
+  ["verify", "exit 0"],
+  ["system", "captured binary patch, 2 files changed"],
+  ["system", "removed worktree, source workspace untouched"],
+] as const;
 
 export default function Home() {
-  return <>
-    <section className="hero"><div className="hero-copy reveal"><p className="eyebrow"><span /> Self-hosted coding task inbox</p><h1>Leave a task.<br /><em>Come back to evidence.</em></h1><p className="lede">DeadDrop runs your local coding agent in a disposable Git worktree, verifies what happened, and returns a patch without touching your working directory.</p><div className="actions"><Link className="button" href="/docs">Run it yourself <span>→</span></Link><Link className="ghost-button" href="/demo">Explore a receipt</Link></div><div className="proof"><span>Outbound only</span><span>Source untouched</span><span>Worker verified</span></div></div>
-      <div className="receipt-window reveal delay"><div className="window-top"><span><i /> job / 184</span><b>completed</b></div><div className="receipt-task"><small>Task</small><strong>Fix the retry race in result delivery</strong></div><div className="receipt-flow"><div><span>01</span><p><strong>Attempt claimed</strong><small>lease 60s · heartbeat 5s</small></p></div><div><span>02</span><p><strong>Worktree isolated</strong><small>source HEAD · dirty files excluded</small></p></div><div><span>03</span><p><strong>Verification passed</strong><small>go test ./... · exit 0</small></p></div></div><div className="receipt-result"><span><small>Changed</small><strong>2 files</strong></span><span><small>Patch</small><strong>ready</strong></span><span><small>Source</small><strong>untouched</strong></span></div></div>
-    </section>
-    <div className="manifesto"><p>Built for the gap between <em>“let an agent work”</em> and <em>“trust whatever it says.”</em></p></div>
-    <section className="section" id="how-it-works"><div className="section-head"><p className="eyebrow">How it works</p><h2>A queue on the web.<br />Execution on your machine.</h2><p>The server coordinates. The worker decides which local path is trusted and produces the evidence you review.</p></div><div className="step-grid">{steps.map(([n, title, copy]) => <article key={n}><span>{n}</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
-    <section className="section split"><div className="section-head"><p className="eyebrow">A narrower promise</p><h2>Agent autonomy without source-directory roulette.</h2><p>DeadDrop treats your working directory as source material, not a scratchpad.</p><Link className="text-link" href="/blog/disposable-worktrees">Why disposable worktrees matter →</Link></div><div className="isolation"><div><small>Source repo</small><strong>your current HEAD</strong><span>dirty + untracked preserved</span></div><b>detached worktree <i>→</i></b><div className="accent-node"><small>Job workspace</small><strong>agent edits here</strong><span>verify · diff · remove</span></div></div></section>
-    <section className="section"><div className="section-head compact"><p className="eyebrow">Reliability is the product</p><h2>The boring machinery is visible.</h2></div><div className="feature-grid">{features.map(([glyph, title, copy]) => <article key={title}><span>{glyph}</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
-    <section className="section open-callout"><div><p className="eyebrow">Open source, not a SaaS funnel</p><h2>Own the inbox. Own the worker. Keep the review gate.</h2><p>GPL-3.0 software for individuals and small trusted teams. No billing, automatic merge, or remote shell disguised as chat.</p></div><div className="actions"><Link className="button" href="/docs">Read the quickstart</Link><Link className="ghost-button" href="https://github.com/haroon0x/DeadDrop">Browse the source</Link></div></section>
-  </>;
+  return (
+    <>
+      <section className="hero">
+        <div className="hero-head">
+          <p
+            className="label label-acid bracket enter"
+            style={{ "--i": 0 } as React.CSSProperties}
+          >
+            Self-hosted coding task inbox
+          </p>
+          <h1 className="d1 enter" style={{ "--i": 1 } as React.CSSProperties}>
+            Leave a task.
+            <br />
+            Come back to <span className="acid">evidence</span>.
+          </h1>
+        </div>
+
+        <div className="hero-lower">
+          <div className="hero-copy">
+            <p className="lede enter" style={{ "--i": 2 } as React.CSSProperties}>
+              DeadDrop runs your local coding agent in a disposable Git worktree
+              and returns a patch you review before anything is applied.
+            </p>
+            <div
+              className="actions enter"
+              style={{ "--i": 3 } as React.CSSProperties}
+            >
+              <Link className="btn" href="/docs">
+                Run it yourself
+                <ArrowRight size={14} weight="bold" />
+              </Link>
+              <Link className="btn-ghost" href="/demo">
+                See a receipt
+              </Link>
+            </div>
+          </div>
+
+          <figure className="hero-figure">
+            <Image
+              src="/img/evidence.webp"
+              alt="A device disassembled and laid out so every single component can be counted"
+              width={1600}
+              height={1200}
+              priority
+            />
+            <figcaption className="label">Every part accounted for</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <div className="shell">
+        <div className="strip">
+          <p>Runs on</p>
+          <ul>
+            {marks.map((mark) => (
+              <li key={mark.slug}>
+                <svg viewBox="0 0 24 24" role="img" aria-label={mark.name}>
+                  <path d={mark.d} />
+                </svg>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <section className="shell band" id="how-it-works">
+        <div className="sec-head reveal">
+          <p className="label label-acid bracket">How it works</p>
+          <h2 className="d2">
+            A queue on the web.
+            <br />
+            Execution on your machine.
+          </h2>
+          <p className="body">
+            The server coordinates. The worker decides which local path is
+            trusted and produces the evidence you review.
+          </p>
+        </div>
+        <div className="module steps reveal">
+          {steps.map(([n, title, copy]) => (
+            <article key={n}>
+              <span>{n}</span>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <hr className="hr" />
+
+      <section className="shell band">
+        <div className="split">
+          <figure className="figure-block plate reveal">
+            <Image
+              src="/img/isolation.webp"
+              alt="A triangulated structural lattice, each cell held separate by its own frame"
+              width={1400}
+              height={1050}
+            />
+            <figcaption className="figure-tag">
+              <span className="label">Source HEAD</span>
+              <span className="label label-acid">Detached worktree</span>
+            </figcaption>
+          </figure>
+          <div className="split-copy reveal">
+            <h2 className="d2">
+              Autonomy without source-directory roulette.
+            </h2>
+            <p className="body">
+              DeadDrop treats your working directory as source material, not a
+              scratchpad. Jobs start from the current commit in a temporary
+              worktree, so half-finished edits and untracked files never enter
+              the diff.
+            </p>
+            <dl className="ledger">
+              <div>
+                <dt>Baseline</dt>
+                <dd>Source HEAD at claim time</dd>
+              </div>
+              <div>
+                <dt>Working copy</dt>
+                <dd>Detached, temporary, removed after</dd>
+              </div>
+              <div>
+                <dt>Your dirty files</dt>
+                <dd>Never touched, never staged</dd>
+              </div>
+            </dl>
+            <Link className="tlink" href="/blog/disposable-worktrees">
+              Why disposable worktrees matter
+              <ArrowRight size={13} weight="bold" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="shell band">
+        <div className="sec-head reveal">
+          <h2 className="d2">The receipt is the product.</h2>
+          <p className="body">
+            Summaries come from the agent. Changed files come from Git.
+            Verification comes from commands the worker actually ran, and status
+            comes from the exit code it observed.
+          </p>
+        </div>
+        <div className="term reveal">
+          <pre>
+            {transcript.map(([channel, line], i) => (
+              <div key={i}>
+                <b>{channel.padEnd(7)}</b>
+                <i>{line}</i>
+              </div>
+            ))}
+          </pre>
+          <div className="term-side">
+            <span className="pill">
+              <CheckSquareOffset size={13} weight="bold" />
+              Completed
+            </span>
+            <dl className="ledger">
+              <div>
+                <dt>Changed files</dt>
+                <dd>2</dd>
+              </div>
+              <div>
+                <dt>Verification</dt>
+                <dd>exit 0</dd>
+              </div>
+              <div>
+                <dt>Patch</dt>
+                <dd>Ready to review</dd>
+              </div>
+              <div>
+                <dt>Source workspace</dt>
+                <dd>Untouched</dd>
+              </div>
+            </dl>
+            <Link className="tlink" href="/demo">
+              Open the full receipt
+              <ArrowRight size={13} weight="bold" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="shell band">
+        <div className="sec-head reveal">
+          <h2 className="d2">Built to survive a bad night.</h2>
+          <p className="body">
+            Networks drop, workers die, and laptops close their lids. Every one
+            of those is a state the queue already knows how to leave.
+          </p>
+        </div>
+        <div className="bento reveal">
+          <div className="b-wide">
+            <ArrowsClockwise size={22} weight="light" />
+            <h3>Recoverable attempts</h3>
+            <p>
+              Expired leases requeue the work. A stale worker cannot overwrite a
+              newer attempt, because the attempt ID it holds is already invalid.
+            </p>
+          </div>
+          <div className="b-tall b-figure">
+            <Image
+              src="/img/queue.webp"
+              alt="A rail junction where many tracks converge under signal gantries"
+              width={1600}
+              height={1000}
+            />
+          </div>
+          <div className="b-mid">
+            <HardDrives size={22} weight="light" />
+            <h3>Durable result replay</h3>
+            <p>
+              A network failure spools the terminal result to disk and replays
+              it before new work is claimed.
+            </p>
+          </div>
+          <div className="b-mid b-dither">
+            <Prohibit size={22} weight="light" />
+            <h3>Real cancellation</h3>
+            <p>
+              A cancellation reaches the heartbeat loop and kills the local
+              command process group.
+            </p>
+          </div>
+          <div className="b-half">
+            <TreeStructure size={22} weight="light" />
+            <h3>Outbound only</h3>
+            <p>
+              No tunnel and no inbound port on your machine. The worker opens
+              every connection.
+            </p>
+          </div>
+          <div className="b-half">
+            <ShieldCheck size={22} weight="light" />
+            <h3>Self-hosted state</h3>
+            <p>
+              FastAPI and PostgreSQL under Compose, or whatever host you already
+              trust.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="shell band">
+        <div className="hazard reveal" />
+        <div className="trust reveal">
+          <div className="trust-figure">
+            <Image
+              src="/img/boundary.webp"
+              alt="The riveted steel understructure of a bridge tower seen from below"
+              width={1200}
+              height={1500}
+            />
+          </div>
+          <div className="trust-copy">
+            <p className="label label-acid">Read this before you run it</p>
+            <h2 className="d3">
+              DeadDrop isolates Git state. It does not sandbox your machine.
+            </h2>
+            <p className="body">
+              A worktree is a repository boundary, not a container. The agent
+              still inherits the filesystem, network, tools, and credentials
+              available to the worker account.
+            </p>
+            <p className="body">
+              Run a dedicated non-root user, expose only the repositories you
+              intend, and read every patch before you apply it.
+            </p>
+            <Link
+              className="tlink"
+              href="https://github.com/haroon0x/DeadDrop/blob/main/SECURITY.md"
+            >
+              Read the security model
+              <ArrowRight size={13} weight="bold" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="shell band">
+        <div className="split" style={{ alignItems: "start" }}>
+          <div className="split-copy reveal">
+            <h2 className="d2">Notes from building it.</h2>
+            <p className="body">
+              Worktrees, receipts, leases, and the unglamorous details between a
+              prompt and a patch.
+            </p>
+            <figure className="figure-block plate" style={{ marginTop: 32 }}>
+              <Image
+                src="/img/taxonomy.webp"
+                alt="Machine components sorted into neat columns by type and size"
+                width={1400}
+                height={900}
+              />
+            </figure>
+          </div>
+          <ul className="index-list reveal">
+            {articles.map((article) => (
+              <li key={article.slug}>
+                <Link href={`/blog/${article.slug}`}>
+                  <div>
+                    <h3>{article.title}</h3>
+                    <p>{article.deck}</p>
+                  </div>
+                  <div className="index-meta">
+                    <span className="label label-acid">{article.category}</span>
+                    <span className="label">{article.minutes}</span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="shell">
+        <div className="closing">
+          <h2 className="d2 reveal">
+            Stop watching the terminal. Start reading the receipt.
+          </h2>
+          <p className="lede reveal">
+            One Compose file, one worker binary, one trusted repository alias.
+          </p>
+          <Link className="btn reveal" href="/docs">
+            Run it yourself
+            <ArrowRight size={14} weight="bold" />
+          </Link>
+        </div>
+      </section>
+    </>
+  );
 }
